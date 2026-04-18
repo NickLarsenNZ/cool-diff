@@ -178,8 +178,9 @@ fn diff_arrays(
 
     match mode {
         ArrayMatchMode::Index => diff_arrays_by_index(actual_arr, expected_arr, config, path),
-        // TODO: key-based matching
-        ArrayMatchMode::Key(_) => unimplemented!("key-based array matching"),
+        ArrayMatchMode::Key(key_field) => {
+            diff_arrays_by_key(actual_arr, expected_arr, key_field, config, path)
+        }
         // TODO: contains matching
         ArrayMatchMode::Contains => unimplemented!("contains array matching"),
     }
@@ -240,6 +241,90 @@ fn diff_arrays_by_index(
     // Extra elements in actual that have no corresponding expected element.
     // The renderer uses this for "# N items omitted" markers.
     let omitted_count = actual_arr.len().saturating_sub(expected_arr.len()) as u16;
+    DiffResult::Children {
+        nodes: children,
+        omitted_count,
+    }
+}
+
+/// Key-based array matching. Matches elements by a distinguished key field.
+///
+/// For each expected element, extracts the value of `key_field` and scans
+/// the actual array for an element with the same key value. If found,
+/// recurse to compare them. If not found, produce a `Missing` leaf.
+fn diff_arrays_by_key(
+    actual_arr: &[Value],
+    expected_arr: &[Value],
+    key_field: &str,
+    config: &DiffConfig,
+    path: &str,
+) -> DiffResult {
+    let mut children = Vec::new();
+    // Track which actual elements were matched so we can count omitted ones
+    let mut matched_count: u16 = 0;
+
+    // Loop through the expected array items and then check each against the
+    // actual array for the element with the matching key.
+    for expected_elem in expected_arr {
+        // Extract the key value from the expected element
+        let Some(expected_key_val) = expected_elem.get(key_field).and_then(|v| v.as_str()) else {
+            // TODO: return an error when expected element is missing the key field
+            unimplemented!("expected element missing key field `{key_field}` at path `{path}`");
+        };
+
+        let segment = PathSegment::NamedElement {
+            match_key: key_field.to_owned(),
+            match_value: expected_key_val.to_owned(),
+        };
+
+        // Find the matching element in the actual array
+        let candidates: Vec<&Value> = actual_arr
+            .iter()
+            .filter(|elem| elem.get(key_field).and_then(|v| v.as_str()) == Some(expected_key_val))
+            .collect();
+
+        match candidates.len() {
+            // No actual element has this key value
+            0 => {
+                let kind = DiffKind::missing(expected_elem.clone());
+                children.push(DiffNode::leaf(segment, kind));
+            }
+
+            // Exactly one match, recurse to compare
+            1 => {
+                matched_count += 1;
+                match diff_values(candidates[0], expected_elem, config, path) {
+                    // Values are equal, nothing to record
+                    DiffResult::Equal => {}
+
+                    // Scalar or type mismatch, wrap as a leaf node
+                    DiffResult::Leaf(kind) => {
+                        children.push(DiffNode::leaf(segment, kind));
+                    }
+
+                    // Nested differences in a child object or array
+                    DiffResult::Children {
+                        nodes,
+                        omitted_count,
+                    } => {
+                        children.push(DiffNode::container(segment, omitted_count, nodes));
+                    }
+                }
+            }
+
+            // Multiple actual elements share the same key value
+            // TODO: ambiguous match handling
+            _ => unimplemented!("ambiguous match handling"),
+        }
+    }
+
+    // no difference
+    if children.is_empty() {
+        return DiffResult::Equal;
+    }
+
+    // Elements in actual that were not matched by any expected element
+    let omitted_count = (actual_arr.len() as u16).saturating_sub(matched_count);
     DiffResult::Children {
         nodes: children,
         omitted_count,
@@ -463,6 +548,111 @@ mod tests {
                 kind: DiffKind::Changed { .. },
             }
         ));
+    }
+
+    fn config_with_key_at(path: &str, key: &str) -> DiffConfig {
+        use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        DiffConfig {
+            match_config: MatchConfig::new().with_config_at(
+                path,
+                ArrayMatchConfig::new(ArrayMatchMode::Key(key.to_owned())),
+            ),
+            ..DiffConfig::default()
+        }
+    }
+
+    #[test]
+    fn key_based_array_equal() {
+        let config = config_with_key_at("items", "name");
+        let actual = json!({"items": [{"name": "a", "val": 1}, {"name": "b", "val": 2}]});
+        let expected = json!({"items": [{"name": "a", "val": 1}]});
+        let tree = diff(&actual, &expected, &config);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn key_based_array_changed() {
+        let config = config_with_key_at("items", "name");
+        let actual = json!({"items": [{"name": "FOO", "value": "bar"}]});
+        let expected = json!({"items": [{"name": "FOO", "value": "baz"}]});
+        let tree = diff(&actual, &expected, &config);
+
+        // items -> NamedElement(name=FOO) -> value: Changed("bar" -> "baz")
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Container { children, .. } = &tree.roots[0] else {
+            panic!("expected Container for items");
+        };
+        assert_eq!(children.len(), 1);
+        let DiffNode::Container {
+            segment, children, ..
+        } = &children[0]
+        else {
+            panic!("expected Container for named element");
+        };
+        assert!(
+            matches!(segment, PathSegment::NamedElement { match_key, match_value }
+                if match_key == "name" && match_value == "FOO"
+            )
+        );
+        assert_eq!(children.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "value"));
+        assert!(matches!(kind, DiffKind::Changed { actual, expected }
+            if actual == &json!("bar") && expected == &json!("baz")
+        ));
+    }
+
+    #[test]
+    fn key_based_array_missing_element() {
+        let config = config_with_key_at("items", "name");
+        let actual = json!({"items": [{"name": "a"}]});
+        let expected = json!({"items": [{"name": "missing"}]});
+        let tree = diff(&actual, &expected, &config);
+
+        let DiffNode::Container { children, .. } = &tree.roots[0] else {
+            panic!("expected Container for items");
+        };
+        assert_eq!(children.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(
+            matches!(segment, PathSegment::NamedElement { match_value, .. }
+                if match_value == "missing"
+            )
+        );
+        assert!(matches!(kind, DiffKind::Missing { .. }));
+    }
+
+    #[test]
+    fn key_based_array_omitted_count() {
+        let config = config_with_key_at("items", "name");
+        let actual = json!({"items": [{"name": "a"}, {"name": "b"}, {"name": "c"}]});
+        let expected = json!({"items": [{"name": "b"}]});
+        let tree = diff(&actual, &expected, &config);
+
+        // No diffs (b matches), but omitted count should be 2 (a and c)
+        // Since there are no diffs, the tree should be empty... but omitted_count
+        // is only set when there ARE diffs. With all equal, we get Equal.
+        assert!(tree.is_empty());
+
+        // Check omitted count via diff_values directly with a diff present
+        let actual = json!({"items": [{"name": "a"}, {"name": "b", "x": 1}, {"name": "c"}]});
+        let expected = json!({"items": [{"name": "b", "x": 99}]});
+        let tree = diff(&actual, &expected, &config);
+
+        let DiffNode::Container {
+            children,
+            omitted_count,
+            ..
+        } = &tree.roots[0]
+        else {
+            panic!("expected Container for items");
+        };
+        // 3 actual elements, 1 matched = 2 omitted
+        assert_eq!(*omitted_count, 2);
     }
 }
 
