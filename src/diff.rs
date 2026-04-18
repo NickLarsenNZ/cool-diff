@@ -53,12 +53,12 @@ fn diff_values(actual: &Value, expected: &Value, config: &DiffConfig, path: &str
     // Type mismatch at the discriminant level (e.g. string vs number,
     // object vs array).
     if std::mem::discriminant(actual) != std::mem::discriminant(expected) {
-        return DiffResult::Leaf(DiffKind::TypeMismatch {
-            actual: actual.clone(),
-            actual_type: value_type_name(actual),
-            expected: expected.clone(),
-            expected_type: value_type_name(expected),
-        });
+        return DiffResult::Leaf(DiffKind::type_mismatch(
+            actual.clone(),
+            value_type_name(actual),
+            expected.clone(),
+            value_type_name(expected),
+        ));
     }
 
     match (actual, expected) {
@@ -71,10 +71,9 @@ fn diff_values(actual: &Value, expected: &Value, config: &DiffConfig, path: &str
         // Scalar mismatch (same type, different value).
         (Value::Bool(_), Value::Bool(_))
         | (Value::Number(_), Value::Number(_))
-        | (Value::String(_), Value::String(_)) => DiffResult::Leaf(DiffKind::Changed {
-            actual: actual.clone(),
-            expected: expected.clone(),
-        }),
+        | (Value::String(_), Value::String(_)) => {
+            DiffResult::Leaf(DiffKind::changed(actual.clone(), expected.clone()))
+        }
 
         // object comparison
         (Value::Object(actual_map), Value::Object(expected_map)) => {
@@ -118,12 +117,8 @@ fn diff_objects(
         match actual_map.get(key) {
             // Expected key doesn't exist in actual
             None => {
-                children.push(DiffNode::Leaf {
-                    segment,
-                    kind: DiffKind::Missing {
-                        expected: expected_val.clone(),
-                    },
-                });
+                let kind = DiffKind::missing(expected_val.clone());
+                children.push(DiffNode::leaf(segment, kind));
             }
 
             // Key exists in both, recurse to compare values
@@ -134,7 +129,7 @@ fn diff_objects(
 
                     // Scalar or type mismatch, wrap as a leaf node
                     DiffResult::Leaf(kind) => {
-                        children.push(DiffNode::Leaf { segment, kind });
+                        children.push(DiffNode::leaf(segment, kind));
                     }
 
                     // Nested differences in a child object or array
@@ -142,11 +137,7 @@ fn diff_objects(
                         nodes,
                         omitted_count,
                     } => {
-                        children.push(DiffNode::Container {
-                            segment,
-                            omitted_count,
-                            children: nodes,
-                        });
+                        children.push(DiffNode::container(segment, omitted_count, nodes));
                     }
                 }
             }

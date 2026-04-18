@@ -13,6 +13,22 @@ impl DiffTree {
     }
 }
 
+impl DiffNode {
+    /// Creates a leaf node representing a single difference.
+    pub fn leaf(segment: PathSegment, kind: DiffKind) -> Self {
+        Self::Leaf { segment, kind }
+    }
+
+    /// Creates a container node with child diffs.
+    pub fn container(segment: PathSegment, omitted_count: u16, children: Vec<DiffNode>) -> Self {
+        Self::Container {
+            segment,
+            omitted_count,
+            children,
+        }
+    }
+}
+
 /// A node in the diff tree.
 pub enum DiffNode {
     /// An intermediate node containing child diffs.
@@ -34,6 +50,33 @@ pub enum DiffNode {
         /// The kind of difference.
         kind: DiffKind,
     },
+}
+
+impl DiffKind {
+    /// Creates a `Changed` diff for values of the same type that differ.
+    pub fn changed(actual: Value, expected: Value) -> Self {
+        Self::Changed { actual, expected }
+    }
+
+    /// Creates a `Missing` diff for a value not found in actual.
+    pub fn missing(expected: Value) -> Self {
+        Self::Missing { expected }
+    }
+
+    /// Creates a `TypeMismatch` diff for values with different JSON types.
+    pub fn type_mismatch(
+        actual: Value,
+        actual_type: &'static str,
+        expected: Value,
+        expected_type: &'static str,
+    ) -> Self {
+        Self::TypeMismatch {
+            actual,
+            actual_type,
+            expected,
+            expected_type,
+        }
+    }
 }
 
 /// The kind of difference found at a leaf node.
