@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::config::DiffConfig;
+use crate::config::{ArrayMatchMode, DiffConfig};
 use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
 
 /// Named constant to signify no differences were found.
@@ -80,8 +80,10 @@ fn diff_values(actual: &Value, expected: &Value, config: &DiffConfig, path: &str
             diff_objects(actual_map, expected_map, config, path)
         }
 
-        // TODO: array comparison
-        (Value::Array(_), Value::Array(_)) => unimplemented!("array comparison"),
+        // Array comparison, dispatched by match mode
+        (Value::Array(actual_arr), Value::Array(expected_arr)) => {
+            diff_arrays(actual_arr, expected_arr, config, path)
+        }
 
         _ => unreachable!("discriminant check above ensures matching types"),
     }
@@ -152,6 +154,92 @@ fn diff_objects(
     // Count of actual keys not checked because they have no corresponding
     // expected key. The renderer uses this for "# N fields omitted" markers.
     let omitted_count = actual_map.len().saturating_sub(expected_map.len()) as u16;
+    DiffResult::Children {
+        nodes: children,
+        omitted_count,
+    }
+}
+
+/// Compares two arrays and returns a diff result.
+///
+/// Looks up the `ArrayMatchMode` for the current path and dispatches
+/// to the appropriate matching strategy.
+fn diff_arrays(
+    actual_arr: &[Value],
+    expected_arr: &[Value],
+    config: &DiffConfig,
+    path: &str,
+) -> DiffResult {
+    let mode = config
+        .match_config
+        .config_at(path)
+        .map(|c| &c.mode)
+        .unwrap_or(&config.default_array_mode);
+
+    match mode {
+        ArrayMatchMode::Index => diff_arrays_by_index(actual_arr, expected_arr, config, path),
+        // TODO: key-based matching
+        ArrayMatchMode::Key(_) => unimplemented!("key-based array matching"),
+        // TODO: contains matching
+        ArrayMatchMode::Contains => unimplemented!("contains array matching"),
+    }
+}
+
+/// Index-based array matching. Compares elements at the same position.
+///
+/// For each expected element, if the actual array has an element at that
+/// index, recurse. Otherwise, produce a `Missing` leaf.
+fn diff_arrays_by_index(
+    actual_arr: &[Value],
+    expected_arr: &[Value],
+    config: &DiffConfig,
+    path: &str,
+) -> DiffResult {
+    let mut children = Vec::new();
+
+    // Loop through the expected array items and then check each against the
+    // actual array for the element of the same index.
+    for (i, expected_elem) in expected_arr.iter().enumerate() {
+        let segment = PathSegment::Index(i as u16);
+
+        match actual_arr.get(i) {
+            // Expected index is beyond the actual array length
+            None => {
+                let kind = DiffKind::missing(expected_elem.clone());
+                children.push(DiffNode::leaf(segment, kind));
+            }
+
+            // Both sides have an element at this index, recurse
+            Some(actual_elem) => {
+                match diff_values(actual_elem, expected_elem, config, path) {
+                    // Values are equal, nothing to record
+                    DiffResult::Equal => {}
+
+                    // Scalar or type mismatch, wrap as a leaf node
+                    DiffResult::Leaf(kind) => {
+                        children.push(DiffNode::leaf(segment, kind));
+                    }
+
+                    // Nested differences in a child object or array
+                    DiffResult::Children {
+                        nodes,
+                        omitted_count,
+                    } => {
+                        children.push(DiffNode::container(segment, omitted_count, nodes));
+                    }
+                }
+            }
+        }
+    }
+
+    // no differences
+    if children.is_empty() {
+        return DiffResult::Equal;
+    }
+
+    // Extra elements in actual that have no corresponding expected element.
+    // The renderer uses this for "# N items omitted" markers.
+    let omitted_count = actual_arr.len().saturating_sub(expected_arr.len()) as u16;
     DiffResult::Children {
         nodes: children,
         omitted_count,
@@ -276,6 +364,90 @@ mod tests {
         };
         assert!(matches!(segment, PathSegment::Key(k) if k == "y"));
         assert!(matches!(kind, DiffKind::Missing { expected } if expected == &json!(2)));
+    }
+
+    #[test]
+    fn index_based_array_equal() {
+        let actual = json!({"items": [1, 2, 3]});
+        let expected = json!({"items": [1, 2, 3]});
+        let tree = diff(&actual, &expected, &default_config());
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn index_based_array_changed() {
+        let actual = json!({"items": [1, 2, 3]});
+        let expected = json!({"items": [1, 99, 3]});
+        let tree = diff(&actual, &expected, &default_config());
+
+        // items -> Index(1): Changed(2 -> 99)
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Container { children, .. } = &tree.roots[0] else {
+            panic!("expected Container");
+        };
+        assert_eq!(children.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Index(1)));
+        assert!(matches!(kind, DiffKind::Changed { actual, expected }
+            if actual == &json!(2) && expected == &json!(99)
+        ));
+    }
+
+    #[test]
+    fn index_based_array_missing_element() {
+        let actual = json!({"items": [1]});
+        let expected = json!({"items": [1, 2, 3]});
+        let tree = diff(&actual, &expected, &default_config());
+
+        let DiffNode::Container { children, .. } = &tree.roots[0] else {
+            panic!("expected Container");
+        };
+        assert_eq!(children.len(), 2);
+
+        // Index 1 is missing
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Index(1)));
+        assert!(matches!(kind, DiffKind::Missing { expected } if expected == &json!(2)));
+
+        // Index 2 is missing
+        let DiffNode::Leaf { segment, kind } = &children[1] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Index(2)));
+        assert!(matches!(kind, DiffKind::Missing { expected } if expected == &json!(3)));
+    }
+
+    #[test]
+    fn index_based_array_omitted_count() {
+        // actual has 5 elements, expected checks 2. Omitted count = 3.
+        let actual = json!({"items": [1, 2, 3, 4, 5]});
+        let expected = json!({"items": [1, 99]});
+        let tree = diff(&actual, &expected, &default_config());
+
+        // Root: items Container (omitted_count=0 since both objects have 1 key)
+        let DiffNode::Container {
+            segment,
+            children,
+            omitted_count,
+        } = &tree.roots[0]
+        else {
+            panic!("expected Container for items key");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "items"));
+        assert_eq!(*omitted_count, 3);
+        // Only one child: Index(1) Changed(2 -> 99). Index(0) is equal.
+        assert_eq!(children.len(), 1);
+        assert!(matches!(
+            &children[0],
+            DiffNode::Leaf {
+                segment: PathSegment::Index(1),
+                kind: DiffKind::Changed { .. },
+            }
+        ));
     }
 }
 

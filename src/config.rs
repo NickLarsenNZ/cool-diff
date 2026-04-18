@@ -5,6 +5,9 @@ pub struct DiffConfig {
     /// Controls how arrays are matched at each path.
     pub match_config: MatchConfig,
 
+    /// Default array match mode, used when a path does not specify its own.
+    pub default_array_mode: ArrayMatchMode,
+
     /// Default ambiguity strategy, used when a path does not specify its own.
     pub default_ambiguous_strategy: AmbiguousMatchStrategy,
 }
@@ -13,6 +16,7 @@ impl Default for DiffConfig {
     fn default() -> Self {
         Self {
             match_config: MatchConfig::default(),
+            default_array_mode: ArrayMatchMode::Index,
             default_ambiguous_strategy: AmbiguousMatchStrategy::default(),
         }
     }
