@@ -5,15 +5,15 @@ pub struct DiffConfig {
     /// Controls how arrays are matched at each path.
     pub match_config: MatchConfig,
 
-    /// Controls behavior when multiple array elements could match.
-    pub ambiguous_strategy: AmbiguousMatchStrategy,
+    /// Default ambiguity strategy, used when a path does not specify its own.
+    pub default_ambiguous_strategy: AmbiguousMatchStrategy,
 }
 
 impl Default for DiffConfig {
     fn default() -> Self {
         Self {
             match_config: MatchConfig::default(),
-            ambiguous_strategy: AmbiguousMatchStrategy::default(),
+            default_ambiguous_strategy: AmbiguousMatchStrategy::default(),
         }
     }
 }
@@ -21,39 +21,62 @@ impl Default for DiffConfig {
 /// Configures how array elements are matched between actual and expected values.
 ///
 /// By default, arrays are matched by index. Each path can be configured with
-/// a different matching mode via [`ArrayMatchMode`].
+/// a different matching mode and ambiguity strategy via [`ArrayMatchConfig`].
 pub struct MatchConfig {
     /// Map from dot-separated path (e.g. `spec.containers`) to the array
-    /// matching mode for that path.
-    modes: HashMap<String, ArrayMatchMode>,
+    /// match configuration for that path.
+    paths: HashMap<String, ArrayMatchConfig>,
 }
 
 impl MatchConfig {
     /// Creates an empty config (index-based matching for all arrays).
     pub fn new() -> Self {
         Self {
-            modes: HashMap::new(),
+            paths: HashMap::new(),
         }
     }
 
-    /// Sets the array matching mode for the given dot-separated path.
-    pub fn with_mode_at(mut self, path: &str, mode: ArrayMatchMode) -> Self {
-        self.modes.insert(path.to_owned(), mode);
+    /// Sets the array match configuration for the given dot-separated path.
+    pub fn with_config_at(mut self, path: &str, config: ArrayMatchConfig) -> Self {
+        self.paths.insert(path.to_owned(), config);
         self
     }
 
-    /// Returns the array matching mode for the given path, defaulting to
-    /// [`ArrayMatchMode::Index`] if not configured.
-    pub fn mode_at(&self, path: &str) -> &ArrayMatchMode {
-        self.modes
-            .get(path)
-            .unwrap_or(&ArrayMatchMode::Index)
+    /// Returns the array match configuration for the given path, if configured.
+    pub fn config_at(&self, path: &str) -> Option<&ArrayMatchConfig> {
+        self.paths.get(path)
     }
 }
 
 impl Default for MatchConfig {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Per-path configuration for array element matching.
+pub struct ArrayMatchConfig {
+    /// How elements are matched at this path.
+    pub mode: ArrayMatchMode,
+
+    /// Optional override for the ambiguity strategy at this path. Falls back
+    /// to [`DiffConfig::default_ambiguous_strategy`] if `None`.
+    pub ambiguous_strategy: Option<AmbiguousMatchStrategy>,
+}
+
+impl ArrayMatchConfig {
+    /// Creates a config with the given mode and no ambiguity override.
+    pub fn new(mode: ArrayMatchMode) -> Self {
+        Self {
+            mode,
+            ambiguous_strategy: None,
+        }
+    }
+
+    /// Sets the ambiguity strategy override for this path.
+    pub fn with_ambiguous_strategy(mut self, strategy: AmbiguousMatchStrategy) -> Self {
+        self.ambiguous_strategy = Some(strategy);
+        self
     }
 }
 
