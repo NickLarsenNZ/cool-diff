@@ -347,7 +347,10 @@ fn diff_arrays_by_contains(
     let mut matched_count: u16 = 0;
 
     for expected_elem in expected_arr {
-        // Find all actual elements that are equal or a superset of expected
+        // Find all actual elements that are equal or a superset of expected.
+        // Because value_contains verifies all expected fields match recursively,
+        // a matched candidate will always produce Equal from diff_values, so we
+        // don't need to recurse into matched elements.
         let candidates: Vec<(usize, &Value)> = actual_arr
             .iter()
             .enumerate()
@@ -361,28 +364,10 @@ fn diff_arrays_by_contains(
                 children.push(DiffNode::leaf(PathSegment::Unmatched, kind));
             }
 
-            // Exactly one match, recurse to compare (may still have nested diffs
-            // in fields not checked by value_contains)
+            // Exactly one match. No need to diff since value_contains
+            // already verified all expected fields match.
             1 => {
                 matched_count += 1;
-                let segment = PathSegment::Index(candidates[0].0 as u16);
-                match diff_values(candidates[0].1, expected_elem, config, path) {
-                    // Values are equal, nothing to record
-                    DiffResult::Equal => {}
-
-                    // Scalar or type mismatch, wrap as a leaf node
-                    DiffResult::Leaf(kind) => {
-                        children.push(DiffNode::leaf(segment, kind));
-                    }
-
-                    // Nested differences in a child object or array
-                    DiffResult::Children {
-                        nodes,
-                        omitted_count,
-                    } => {
-                        children.push(DiffNode::container(segment, omitted_count, nodes));
-                    }
-                }
             }
 
             // Multiple actual elements match
