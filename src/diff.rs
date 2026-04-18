@@ -167,6 +167,127 @@ fn diff_objects(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn default_config() -> DiffConfig {
+        DiffConfig::default()
+    }
+
+    #[test]
+    fn equal_objects_produce_empty_diff() {
+        let actual = json!({"a": 1, "b": "hello"});
+        let expected = json!({"a": 1, "b": "hello"});
+        let tree = diff(&actual, &expected, &default_config());
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn scalar_changed() {
+        let actual = json!({"a": {"b": {"c": "foo"}}});
+        let expected = json!({"a": {"b": {"c": "bar"}}});
+        let tree = diff(&actual, &expected, &default_config());
+
+        // Should produce: a -> b -> c: Changed("foo" -> "bar")
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Container { segment, children, .. } = &tree.roots[0] else {
+            panic!("expected Container");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "a"));
+
+        let DiffNode::Container { segment, children, .. } = &children[0] else {
+            panic!("expected Container");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "b"));
+
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "c"));
+        assert!(matches!(kind, DiffKind::Changed { actual, expected }
+            if actual == &json!("foo") && expected == &json!("bar")
+        ));
+    }
+
+    #[test]
+    fn missing_key() {
+        let actual = json!({"a": 1});
+        let expected = json!({"a": 1, "b": 2});
+        let tree = diff(&actual, &expected, &default_config());
+
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &tree.roots[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "b"));
+        assert!(matches!(kind, DiffKind::Missing { expected } if expected == &json!(2)));
+    }
+
+    #[test]
+    fn type_mismatch() {
+        let actual = json!({"a": 42});
+        let expected = json!({"a": "42"});
+        let tree = diff(&actual, &expected, &default_config());
+
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &tree.roots[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "a"));
+        assert!(matches!(kind, DiffKind::TypeMismatch {
+            actual_type: "number",
+            expected_type: "string",
+            ..
+        }));
+    }
+
+    #[test]
+    fn omitted_count_reflects_extra_actual_keys() {
+        let actual = json!({"a": 1, "b": 2, "c": 3});
+        let expected = json!({"a": 99});
+        let tree = diff(&actual, &expected, &default_config());
+
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Leaf { kind, .. } = &tree.roots[0] else {
+            panic!("expected Leaf for Changed");
+        };
+        assert!(matches!(kind, DiffKind::Changed { .. }));
+
+        // The root-level Children omitted_count should be 2 (b and c not in expected).
+        // But since roots are unwrapped from Children, we need to check via diff_values directly.
+        let result = diff_values(
+            &actual,
+            &expected,
+            &default_config(),
+            "",
+        );
+        assert!(matches!(result, DiffResult::Children { omitted_count: 2, .. }));
+    }
+
+    #[test]
+    fn nested_missing_key() {
+        let actual = json!({"a": {"x": 1}});
+        let expected = json!({"a": {"x": 1, "y": 2}});
+        let tree = diff(&actual, &expected, &default_config());
+
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Container { segment, children, omitted_count } = &tree.roots[0] else {
+            panic!("expected Container");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "a"));
+        assert_eq!(*omitted_count, 0);
+
+        assert_eq!(children.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "y"));
+        assert!(matches!(kind, DiffKind::Missing { expected } if expected == &json!(2)));
+    }
+}
+
 /// Returns a human-readable type name for a JSON value.
 fn value_type_name(value: &Value) -> &'static str {
     match value {
