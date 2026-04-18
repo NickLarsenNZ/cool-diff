@@ -181,8 +181,9 @@ fn diff_arrays(
         ArrayMatchMode::Key(key_field) => {
             diff_arrays_by_key(actual_arr, expected_arr, key_field, config, path)
         }
-        // TODO: contains matching
-        ArrayMatchMode::Contains => unimplemented!("contains array matching"),
+        ArrayMatchMode::Contains => {
+            diff_arrays_by_contains(actual_arr, expected_arr, config, path)
+        }
     }
 }
 
@@ -328,6 +329,110 @@ fn diff_arrays_by_key(
     DiffResult::Children {
         nodes: children,
         omitted_count,
+    }
+}
+
+/// Contains-based array matching. Finds a matching element anywhere in the
+/// actual array.
+///
+/// For scalars, matches by exact value equality. For objects, matches by
+/// recursive subset comparison (all expected fields must match).
+fn diff_arrays_by_contains(
+    actual_arr: &[Value],
+    expected_arr: &[Value],
+    config: &DiffConfig,
+    path: &str,
+) -> DiffResult {
+    let mut children = Vec::new();
+    // Track which actual indices were matched so we can count omitted ones
+    let mut matched_count: u16 = 0;
+
+    for expected_elem in expected_arr {
+        // Find all actual elements that are equal or a superset of expected
+        let candidates: Vec<(usize, &Value)> = actual_arr
+            .iter()
+            .enumerate()
+            .filter(|(_, actual_elem)| value_contains(actual_elem, expected_elem))
+            .collect();
+
+        match candidates.len() {
+            // No actual element matches the expected element
+            0 => {
+                let kind = DiffKind::missing(expected_elem.clone());
+                children.push(DiffNode::leaf(PathSegment::Unmatched, kind));
+            }
+
+            // Exactly one match, recurse to compare (may still have nested diffs
+            // in fields not checked by value_contains)
+            1 => {
+                matched_count += 1;
+                let segment = PathSegment::Index(candidates[0].0 as u16);
+                match diff_values(candidates[0].1, expected_elem, config, path) {
+                    // Values are equal, nothing to record
+                    DiffResult::Equal => {}
+
+                    // Scalar or type mismatch, wrap as a leaf node
+                    DiffResult::Leaf(kind) => {
+                        children.push(DiffNode::leaf(segment, kind));
+                    }
+
+                    // Nested differences in a child object or array
+                    DiffResult::Children {
+                        nodes,
+                        omitted_count,
+                    } => {
+                        children.push(DiffNode::container(segment, omitted_count, nodes));
+                    }
+                }
+            }
+
+            // Multiple actual elements match
+            // TODO: ambiguous match handling
+            _ => unimplemented!("ambiguous match handling"),
+        }
+    }
+
+    if children.is_empty() {
+        return DiffResult::Equal;
+    }
+
+    // Elements in actual that were not matched by any expected element
+    let omitted_count = (actual_arr.len() as u16).saturating_sub(matched_count);
+    DiffResult::Children {
+        nodes: children,
+        omitted_count,
+    }
+}
+
+/// Checks whether `actual` contains all the data in `expected`.
+///
+/// For scalars, this is exact equality. For objects, every key in `expected`
+/// must exist in `actual` with a matching value (recursively). For arrays,
+/// this is exact equality (element-by-element).
+fn value_contains(actual: &Value, expected: &Value) -> bool {
+    match (actual, expected) {
+        // Different types never match
+        _ if std::mem::discriminant(actual) != std::mem::discriminant(expected) => false,
+
+        // Scalars: exact equality
+        (Value::Null, Value::Null) => true,
+        (Value::Bool(a), Value::Bool(e)) => a == e,
+        (Value::Number(a), Value::Number(e)) => a == e,
+        (Value::String(a), Value::String(e)) => a == e,
+
+        // Objects: every expected key must exist and match in actual
+        (Value::Object(actual_map), Value::Object(expected_map)) => {
+            expected_map.iter().all(|(key, expected_val)| {
+                actual_map
+                    .get(key)
+                    .is_some_and(|actual_val| value_contains(actual_val, expected_val))
+            })
+        }
+
+        // Arrays: exact element-by-element equality
+        (Value::Array(a), Value::Array(e)) => a == e,
+
+        _ => unreachable!("discriminant check above ensures matching types"),
     }
 }
 
@@ -653,6 +758,76 @@ mod tests {
         };
         // 3 actual elements, 1 matched = 2 omitted
         assert_eq!(*omitted_count, 2);
+    }
+
+    fn config_with_contains_at(path: &str) -> DiffConfig {
+        use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        DiffConfig {
+            match_config: MatchConfig::new()
+                .with_config_at(path, ArrayMatchConfig::new(ArrayMatchMode::Contains)),
+            ..DiffConfig::default()
+        }
+    }
+
+    #[test]
+    fn contains_array_scalar_equal() {
+        let config = config_with_contains_at("items");
+        let actual = json!({"items": ["a", "b", "c"]});
+        let expected = json!({"items": ["b"]});
+        let tree = diff(&actual, &expected, &config);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn contains_array_object_subset_equal() {
+        let config = config_with_contains_at("items");
+        let actual = json!({"items": [{"a": 1, "b": 2}, {"c": 3}]});
+        let expected = json!({"items": [{"a": 1}]});
+        let tree = diff(&actual, &expected, &config);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn contains_array_missing_element() {
+        let config = config_with_contains_at("items");
+        let actual = json!({"items": ["a", "b"]});
+        let expected = json!({"items": ["x"]});
+        let tree = diff(&actual, &expected, &config);
+
+        let DiffNode::Container { children, .. } = &tree.roots[0] else {
+            panic!("expected Container for items");
+        };
+        assert_eq!(children.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Unmatched));
+        assert!(matches!(kind, DiffKind::Missing { expected } if expected == &json!("x")));
+    }
+
+    #[test]
+    fn contains_array_match_not_at_first_position() {
+        let config = config_with_contains_at("items");
+        // {b: 1} matches the second element (index 1), not the first.
+        // Since all expected fields match, the result is equal.
+        let actual = json!({"items": [{"a": 1}, {"b": 1}]});
+        let expected = json!({"items": [{"b": 1}]});
+        let tree = diff(&actual, &expected, &config);
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn contains_array_omitted_count() {
+        let config = config_with_contains_at("items");
+        let actual = json!({"items": ["a", "b", "c"]});
+        let expected = json!({"items": ["x"]});
+        let tree = diff(&actual, &expected, &config);
+
+        let DiffNode::Container { omitted_count, .. } = &tree.roots[0] else {
+            panic!("expected Container for items");
+        };
+        // 0 matched out of 3 actual = 3 omitted
+        assert_eq!(*omitted_count, 3);
     }
 }
 

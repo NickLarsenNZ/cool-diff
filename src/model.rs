@@ -128,4 +128,10 @@ pub enum PathSegment {
 
     /// An array element matched by position.
     Index(u16),
+
+    /// An expected array element with no matching actual element.
+    ///
+    /// Used with key-based and contains matching when no candidate was
+    /// found in the actual array.
+    Unmatched,
 }
