@@ -271,12 +271,18 @@ mod tests {
 
         // Should produce: a -> b -> c: Changed("foo" -> "bar")
         assert_eq!(tree.roots.len(), 1);
-        let DiffNode::Container { segment, children, .. } = &tree.roots[0] else {
+        let DiffNode::Container {
+            segment, children, ..
+        } = &tree.roots[0]
+        else {
             panic!("expected Container");
         };
         assert!(matches!(segment, PathSegment::Key(k) if k == "a"));
 
-        let DiffNode::Container { segment, children, .. } = &children[0] else {
+        let DiffNode::Container {
+            segment, children, ..
+        } = &children[0]
+        else {
             panic!("expected Container");
         };
         assert!(matches!(segment, PathSegment::Key(k) if k == "b"));
@@ -315,11 +321,14 @@ mod tests {
             panic!("expected Leaf");
         };
         assert!(matches!(segment, PathSegment::Key(k) if k == "a"));
-        assert!(matches!(kind, DiffKind::TypeMismatch {
-            actual_type: "number",
-            expected_type: "string",
-            ..
-        }));
+        assert!(matches!(
+            kind,
+            DiffKind::TypeMismatch {
+                actual_type: "number",
+                expected_type: "string",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -336,13 +345,14 @@ mod tests {
 
         // The root-level Children omitted_count should be 2 (b and c not in expected).
         // But since roots are unwrapped from Children, we need to check via diff_values directly.
-        let result = diff_values(
-            &actual,
-            &expected,
-            &default_config(),
-            "",
-        );
-        assert!(matches!(result, DiffResult::Children { omitted_count: 2, .. }));
+        let result = diff_values(&actual, &expected, &default_config(), "");
+        assert!(matches!(
+            result,
+            DiffResult::Children {
+                omitted_count: 2,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -352,7 +362,12 @@ mod tests {
         let tree = diff(&actual, &expected, &default_config());
 
         assert_eq!(tree.roots.len(), 1);
-        let DiffNode::Container { segment, children, omitted_count } = &tree.roots[0] else {
+        let DiffNode::Container {
+            segment,
+            children,
+            omitted_count,
+        } = &tree.roots[0]
+        else {
             panic!("expected Container");
         };
         assert!(matches!(segment, PathSegment::Key(k) if k == "a"));
