@@ -273,11 +273,6 @@ fn diff_arrays_by_key(
             unimplemented!("expected element missing key field `{key_field}` at path `{path}`");
         };
 
-        let segment = PathSegment::NamedElement {
-            match_key: key_field.to_owned(),
-            match_value: expected_key_val.to_owned(),
-        };
-
         // Find the matching element in the actual array
         let candidates: Vec<&Value> = actual_arr
             .iter()
@@ -288,12 +283,16 @@ fn diff_arrays_by_key(
             // No actual element has this key value
             0 => {
                 let kind = DiffKind::missing(expected_elem.clone());
-                children.push(DiffNode::leaf(segment, kind));
+                children.push(DiffNode::leaf(PathSegment::Unmatched, kind));
             }
 
             // Exactly one match, recurse to compare
             1 => {
                 matched_count += 1;
+                let segment = PathSegment::NamedElement {
+                    match_key: key_field.to_owned(),
+                    match_value: expected_key_val.to_owned(),
+                };
                 match diff_values(candidates[0], expected_elem, config, path) {
                     // Values are equal, nothing to record
                     DiffResult::Equal => {}
@@ -723,11 +722,7 @@ mod tests {
         let DiffNode::Leaf { segment, kind } = &children[0] else {
             panic!("expected Leaf");
         };
-        assert!(
-            matches!(segment, PathSegment::NamedElement { match_value, .. }
-                if match_value == "missing"
-            )
-        );
+        assert!(matches!(segment, PathSegment::Unmatched));
         assert!(matches!(kind, DiffKind::Missing { .. }));
     }
 
