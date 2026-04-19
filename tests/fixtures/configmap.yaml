@@ -1,0 +1,29 @@
+---
+# actual
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: default
+  labels:
+    app: web
+    managed-by: helm
+data:
+  database.host: postgres.data.svc
+  database.port: "5432"
+  cache.enabled: "true"
+  cache.ttl: "300"
+  log.level: info
+  log.format: json
+---
+# expected
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  database.host: postgres.data.svc
+  database.port: "5432"
+  cache.enabled: "true"
+  cache.ttl: "600"
+  log.level: debug

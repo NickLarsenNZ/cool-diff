@@ -1,0 +1,50 @@
+---
+# actual
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  namespace: default
+  labels:
+    app: test
+    version: "1.0"
+spec:
+  containers:
+    - name: main
+      image: busybox:latest
+      command: ["sh", "-c", "sleep 3600"]
+      env:
+        - name: FOO
+          value: BAZ
+        - name: LOG_LEVEL
+          value: info
+      ports:
+        - containerPort: 8080
+          protocol: TCP
+    - name: sidecar
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+          protocol: TCP
+  volumes:
+    - name: config
+      configMap:
+        name: my-config
+    - name: data
+      emptyDir: {}
+status:
+  phase: Running
+---
+# expected
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+spec:
+  containers:
+    - name: main
+      env:
+        - name: FOO
+          value: BAR
+    - name: sidecar
+      image: nginx:1.25

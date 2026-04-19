@@ -1,0 +1,57 @@
+---
+# actual
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: production
+  labels:
+    app: web
+    team: platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: myapp:v2.1.0
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          env:
+            - name: DATABASE_URL
+              value: postgres://db:5432/app
+            - name: CACHE_TTL
+              value: "300"
+      initContainers:
+        - name: migrate
+          image: myapp:v2.1.0
+          command: ["./migrate"]
+---
+# expected
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+spec:
+  replicas: 5
+  template:
+    spec:
+      containers:
+        - name: web
+          image: myapp:v2.2.0
+          resources:
+            limits:
+              memory: 1Gi
