@@ -101,8 +101,8 @@ By default, arrays are compared by position (index). You can configure per-path 
 ```rust
 use cool_diff::{ArrayMatchConfig, ArrayMatchMode, DiffConfig, MatchConfig};
 
-let config = DiffConfig {
-    match_config: MatchConfig::new()
+let config = DiffConfig::new().with_match_config(
+    MatchConfig::new()
         .with_config_at(
             "spec.containers",
             ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
@@ -111,8 +111,7 @@ let config = DiffConfig {
             "tags",
             ArrayMatchConfig::new(ArrayMatchMode::Contains),
         ),
-    ..DiffConfig::default()
-};
+);
 ```
 
 ## Renderer

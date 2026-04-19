@@ -80,10 +80,7 @@ fn main() {
             ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
         );
 
-    let config = DiffConfig {
-        match_config: pod_match_config,
-        ..DiffConfig::default()
-    };
+    let config = DiffConfig::new().with_match_config(pod_match_config);
 
     let tree = cool_diff::diff(&actual, &expected, &config).unwrap();
 

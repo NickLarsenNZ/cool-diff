@@ -13,10 +13,10 @@ pub struct YamlRenderer {
     /// Maximum lines to render per side for large values.
     ///
     /// `None` means no truncation.
-    pub max_lines_per_side: Option<u32>,
+    max_lines_per_side: Option<u32>,
 
     /// Number of spaces per indentation level.
-    pub indent_width: u16,
+    indent_width: u16,
 }
 
 impl YamlRenderer {

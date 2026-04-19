@@ -209,13 +209,13 @@ fn diff_arrays(
     config: &DiffConfig,
     path: &str,
 ) -> Result<DiffResult> {
-    let path_config = config.match_config.config_at(path);
+    let path_config = config.match_config().config_at(path);
     let mode = path_config
-        .map(|c| &c.mode)
-        .unwrap_or(&config.default_array_mode);
+        .map(|c| c.mode())
+        .unwrap_or(config.default_array_mode());
     let ambiguous_strategy = path_config
-        .and_then(|c| c.ambiguous_strategy.as_ref())
-        .unwrap_or(&config.default_ambiguous_strategy);
+        .and_then(|c| c.ambiguous_strategy())
+        .unwrap_or(config.default_ambiguous_strategy());
 
     match mode {
         ArrayMatchMode::Index => diff_arrays_by_index(actual_arr, expected_arr, config, path),
@@ -816,13 +816,10 @@ mod tests {
 
     fn config_with_key_at(path: &str, key: &str) -> DiffConfig {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
-        DiffConfig {
-            match_config: MatchConfig::new().with_config_at(
-                path,
-                ArrayMatchConfig::new(ArrayMatchMode::Key(key.to_owned())),
-            ),
-            ..DiffConfig::default()
-        }
+        DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            path,
+            ArrayMatchConfig::new(ArrayMatchMode::Key(key.to_owned())),
+        ))
     }
 
     #[test]
@@ -917,11 +914,10 @@ mod tests {
 
     fn config_with_contains_at(path: &str) -> DiffConfig {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
-        DiffConfig {
-            match_config: MatchConfig::new()
+        DiffConfig::new().with_match_config(
+            MatchConfig::new()
                 .with_config_at(path, ArrayMatchConfig::new(ArrayMatchMode::Contains)),
-            ..DiffConfig::default()
-        }
+        )
     }
 
     #[test]
@@ -991,14 +987,13 @@ mod tests {
         strategy: AmbiguousMatchStrategy,
     ) -> DiffConfig {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
-        DiffConfig {
-            match_config: MatchConfig::new().with_config_at(
+        DiffConfig::new().with_match_config(
+            MatchConfig::new().with_config_at(
                 path,
                 ArrayMatchConfig::new(ArrayMatchMode::Key(key.to_owned()))
                     .with_ambiguous_strategy(strategy),
             ),
-            ..DiffConfig::default()
-        }
+        )
     }
 
     fn config_with_contains_and_strategy(
@@ -1006,13 +1001,10 @@ mod tests {
         strategy: AmbiguousMatchStrategy,
     ) -> DiffConfig {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
-        DiffConfig {
-            match_config: MatchConfig::new().with_config_at(
-                path,
-                ArrayMatchConfig::new(ArrayMatchMode::Contains).with_ambiguous_strategy(strategy),
-            ),
-            ..DiffConfig::default()
-        }
+        DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            path,
+            ArrayMatchConfig::new(ArrayMatchMode::Contains).with_ambiguous_strategy(strategy),
+        ))
     }
 
     #[test]

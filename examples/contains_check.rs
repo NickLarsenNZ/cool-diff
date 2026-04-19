@@ -28,14 +28,13 @@ fn main() {
         ],
     });
 
-    let config = DiffConfig {
-        match_config: MatchConfig::new().with_config_at(
+    let config = DiffConfig::new().with_match_config(
+        MatchConfig::new().with_config_at(
             "inventory",
             ArrayMatchConfig::new(ArrayMatchMode::Contains)
                 .with_ambiguous_strategy(AmbiguousMatchStrategy::BestMatch),
         ),
-        ..DiffConfig::default()
-    };
+    );
 
     let tree = cool_diff::diff(&actual, &expected, &config).unwrap();
 

@@ -8,8 +8,8 @@ use serde::Deserialize;
 
 /// Standard Kubernetes config: match common array fields by name.
 fn k8s_config() -> DiffConfig {
-    DiffConfig {
-        match_config: MatchConfig::new()
+    DiffConfig::new().with_match_config(
+        MatchConfig::new()
             .with_config_at(
                 "spec.containers",
                 ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
@@ -34,8 +34,7 @@ fn k8s_config() -> DiffConfig {
                 "spec.template.spec.containers.env",
                 ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
             ),
-        ..DiffConfig::default()
-    }
+    )
 }
 
 /// Parses a multi-document YAML fixture file into (actual, expected) Values.

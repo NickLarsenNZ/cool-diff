@@ -27,8 +27,8 @@ fn main() {
         ],
     });
 
-    let config = DiffConfig {
-        match_config: MatchConfig::new()
+    let config = DiffConfig::new().with_match_config(
+        MatchConfig::new()
             // steps: order matters (index-based is the default, shown explicitly)
             .with_config_at("steps", ArrayMatchConfig::new(ArrayMatchMode::Index))
             // tags: just check presence
@@ -38,8 +38,7 @@ fn main() {
                 "contributors",
                 ArrayMatchConfig::new(ArrayMatchMode::Key("email".to_owned())),
             ),
-        ..DiffConfig::default()
-    };
+    );
 
     let tree = cool_diff::diff(&actual, &expected, &config).unwrap();
     let output = YamlRenderer::new().render(&tree);

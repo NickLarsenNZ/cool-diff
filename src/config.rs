@@ -3,13 +3,53 @@ use std::collections::HashMap;
 /// Top-level configuration for the diff algorithm.
 pub struct DiffConfig {
     /// Controls how arrays are matched at each path.
-    pub match_config: MatchConfig,
+    match_config: MatchConfig,
 
     /// Default array match mode, used when a path does not specify its own.
-    pub default_array_mode: ArrayMatchMode,
+    default_array_mode: ArrayMatchMode,
 
     /// Default ambiguity strategy, used when a path does not specify its own.
-    pub default_ambiguous_strategy: AmbiguousMatchStrategy,
+    default_ambiguous_strategy: AmbiguousMatchStrategy,
+}
+
+impl DiffConfig {
+    /// Creates a new config with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the match config for array path lookups.
+    pub fn with_match_config(mut self, match_config: MatchConfig) -> Self {
+        self.match_config = match_config;
+        self
+    }
+
+    /// Sets the fallback array match mode for paths without explicit config.
+    pub fn with_fallback_array_mode(mut self, mode: ArrayMatchMode) -> Self {
+        self.default_array_mode = mode;
+        self
+    }
+
+    /// Sets the fallback ambiguity strategy for paths without explicit config.
+    pub fn with_fallback_ambiguous_strategy(mut self, strategy: AmbiguousMatchStrategy) -> Self {
+        self.default_ambiguous_strategy = strategy;
+        self
+    }
+
+    /// Returns the match config.
+    pub fn match_config(&self) -> &MatchConfig {
+        &self.match_config
+    }
+
+    /// Returns the default array match mode.
+    pub fn default_array_mode(&self) -> &ArrayMatchMode {
+        &self.default_array_mode
+    }
+
+    /// Returns the default ambiguity strategy.
+    pub fn default_ambiguous_strategy(&self) -> &AmbiguousMatchStrategy {
+        &self.default_ambiguous_strategy
+    }
 }
 
 impl Default for DiffConfig {
@@ -61,11 +101,12 @@ impl Default for MatchConfig {
 /// Per-path configuration for array element matching.
 pub struct ArrayMatchConfig {
     /// How elements are matched at this path.
-    pub mode: ArrayMatchMode,
+    mode: ArrayMatchMode,
 
-    /// Optional override for the ambiguity strategy at this path. Falls back
-    /// to [`DiffConfig::default_ambiguous_strategy`] if `None`.
-    pub ambiguous_strategy: Option<AmbiguousMatchStrategy>,
+    /// Optional override for the ambiguity strategy at this path.
+    ///
+    /// Falls back to [`DiffConfig::default_ambiguous_strategy`] if `None`.
+    ambiguous_strategy: Option<AmbiguousMatchStrategy>,
 }
 
 impl ArrayMatchConfig {
@@ -81,6 +122,16 @@ impl ArrayMatchConfig {
     pub fn with_ambiguous_strategy(mut self, strategy: AmbiguousMatchStrategy) -> Self {
         self.ambiguous_strategy = Some(strategy);
         self
+    }
+
+    /// Returns the array match mode.
+    pub fn mode(&self) -> &ArrayMatchMode {
+        &self.mode
+    }
+
+    /// Returns the ambiguity strategy override, if set.
+    pub fn ambiguous_strategy(&self) -> Option<&AmbiguousMatchStrategy> {
+        self.ambiguous_strategy.as_ref()
     }
 }
 
@@ -113,4 +164,3 @@ pub enum AmbiguousMatchStrategy {
     /// Pick the candidate with the fewest diffs, without a warning comment.
     Silent,
 }
-
