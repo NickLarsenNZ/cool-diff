@@ -9,8 +9,8 @@ pub trait DiffRenderer {
 
 /// Line prefix characters for diff output.
 pub mod indicator {
-    /// Unchanged context lines.
-    pub const UNCHANGED: char = ' ';
+    /// Context lines (unchanged values, comments, structural markers).
+    pub const CONTEXT: char = ' ';
 
     /// Expected values (what we wanted but didn't get).
     pub const EXPECTED: char = '-';

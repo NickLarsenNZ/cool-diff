@@ -6,7 +6,7 @@ use crate::render::{DiffRenderer, indicator};
 /// Renders a `DiffTree` as YAML-like diff output.
 ///
 /// Output uses unified diff conventions:
-/// - ` ` prefix for unchanged lines (reserves column 0 for diff indicators)
+/// - ` ` prefix for context lines (unchanged values, comments, structural markers)
 /// - `-` prefix for expected (what we wanted but didn't get)
 /// - `+` prefix for actual (what we got instead)
 pub struct YamlRenderer {
@@ -59,7 +59,7 @@ impl YamlRenderer {
                 // Index segments include the index as a comment (e.g. `- # index 0`).
                 let label = format_segment_label(segment);
                 let suffix = if matches!(segment, PathSegment::Key(_)) { ":" } else { "" };
-                push_line(output, indicator::UNCHANGED, indent, &format!("{label}{suffix}"));
+                push_line(output, indicator::CONTEXT, indent, &format!("{label}{suffix}"));
 
                 let child_indent = indent + self.indent_width;
 
@@ -67,7 +67,7 @@ impl YamlRenderer {
                     let unit = omitted_unit(segment);
                     push_line(
                         output,
-                        indicator::UNCHANGED,
+                        indicator::CONTEXT,
                         child_indent,
                         &format!("# {omitted_count} {unit} omitted"),
                     );
@@ -126,7 +126,7 @@ fn render_leaf(
         DiffKind::Changed { actual, expected } => {
             // Emit an index comment for position-matched array elements
             if let Some(comment) = index_comment(segment) {
-                push_line(output, indicator::UNCHANGED, indent, &comment);
+                push_line(output, indicator::CONTEXT, indent, &comment);
             }
 
             if segment.is_array() {
@@ -163,7 +163,7 @@ fn render_leaf(
         DiffKind::Missing { expected } => {
             // Emit an index comment for position-matched array elements
             if let Some(comment) = index_comment(segment) {
-                push_line(output, indicator::UNCHANGED, indent, &comment);
+                push_line(output, indicator::CONTEXT, indent, &comment);
             }
 
             if segment.is_array() {
