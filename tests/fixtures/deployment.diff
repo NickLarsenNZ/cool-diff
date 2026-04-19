@@ -1,0 +1,19 @@
+ spec:
+   # 1 fields omitted
+-  replicas: 5
++  replicas: 3
+   template:
+     # 1 fields omitted
+     spec:
+       # 1 fields omitted
+       containers:
+         - name: web
+           # 2 items omitted
+-          image: "myapp:v2.2.0"
++          image: "myapp:v2.1.0"
+           resources:
+             # 1 fields omitted
+             limits:
+               # 1 fields omitted
+-              memory: 1Gi
++              memory: 512Mi

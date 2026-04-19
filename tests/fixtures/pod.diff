@@ -1,0 +1,10 @@
+ spec:
+   # 1 fields omitted
+   containers:
+     - name: main
+       # 3 items omitted
+       env:
+         # 1 fields omitted
+         - name: FOO
+-          value: BAR
++          value: BAZ

@@ -1,0 +1,10 @@
+ spec:
+   # 3 fields omitted
+   template:
+     # 1 fields omitted
+     spec:
+       containers:
+         - name: postgres
+           # 2 items omitted
+-          image: "postgres:16.3"
++          image: "postgres:16.2"
