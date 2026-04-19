@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
-use crate::render::{indicator, DiffRenderer};
+use crate::render::{DiffRenderer, indicator};
 
 /// Renders a `DiffTree` as YAML-like diff output.
 ///
@@ -50,14 +50,24 @@ impl YamlRenderer {
         match node {
             DiffNode::Container {
                 segment,
-                omitted_count: _omitted_count,
+                omitted_count,
                 children,
             } => {
                 // Render the segment as a context line
                 let label = format_segment_label(segment);
                 push_line(output, indicator::UNCHANGED, indent, &format!("{label}:"));
 
-                // TODO: omitted count rendering
+                let child_indent = indent + self.indent_width;
+
+                if *omitted_count > 0 {
+                    let unit = omitted_unit(segment);
+                    push_line(
+                        output,
+                        indicator::UNCHANGED,
+                        child_indent,
+                        &format!("# {omitted_count} {unit} omitted"),
+                    );
+                }
 
                 for child in children {
                     render_child(self, child, indent, output);
@@ -105,24 +115,56 @@ fn render_leaf(segment: &PathSegment, kind: &DiffKind, indent: u16, output: &mut
         // Container nodes, not Leaf nodes). Safe to call format_scalar.
         DiffKind::Changed { actual, expected } => {
             let label = format_segment_label(segment);
-            push_line(output, indicator::EXPECTED, indent, &format!("{label}: {val}", val = format_scalar(expected)));
-            push_line(output, indicator::ACTUAL, indent, &format!("{label}: {val}", val = format_scalar(actual)));
+            push_line(
+                output,
+                indicator::EXPECTED,
+                indent,
+                &format!("{label}: {val}", val = format_scalar(expected)),
+            );
+            push_line(
+                output,
+                indicator::ACTUAL,
+                indent,
+                &format!("{label}: {val}", val = format_scalar(actual)),
+            );
         }
 
         DiffKind::Missing { expected } => {
             let label = format_segment_label(segment);
             if is_scalar(expected) {
                 // Scalar missing value, safe to call format_scalar
-                push_line(output, indicator::EXPECTED, indent, &format!("{label}: {val}", val = format_scalar(expected)));
+                push_line(
+                    output,
+                    indicator::EXPECTED,
+                    indent,
+                    &format!("{label}: {val}", val = format_scalar(expected)),
+                );
             } else {
                 // TODO: missing subtree rendering
-                push_line(output, indicator::EXPECTED, indent, &format!("{label}: ..."));
+                push_line(
+                    output,
+                    indicator::EXPECTED,
+                    indent,
+                    &format!("{label}: ..."),
+                );
             }
         }
 
         DiffKind::TypeMismatch { .. } => {
             // TODO: type mismatch rendering
             unimplemented!("type mismatch rendering");
+        }
+    }
+}
+
+/// Returns the appropriate unit word for omitted count based on the segment type.
+///
+/// Object keys use "fields", array segments use "items".
+fn omitted_unit(segment: &PathSegment) -> &'static str {
+    match segment {
+        PathSegment::Key(_) => "fields",
+        PathSegment::NamedElement { .. } | PathSegment::Index(_) | PathSegment::Unmatched => {
+            "items"
         }
     }
 }
@@ -216,7 +258,8 @@ fn is_scalar(value: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{diff, DiffConfig};
+    use crate::{DiffConfig, diff};
+    use indoc::indoc;
     use serde_json::json;
 
     fn render(actual: &Value, expected: &Value) -> String {
@@ -233,8 +276,10 @@ mod tests {
         );
         assert_eq!(
             output,
-            "-name: expected_value\n\
-             +name: actual_value\n"
+            indoc! {"
+                -name: expected_value
+                +name: actual_value
+            "}
         );
     }
 
@@ -246,27 +291,46 @@ mod tests {
         );
         assert_eq!(
             output,
-            " a:\n\
-             -  b: expected\n\
-             +  b: actual\n"
+            indoc! {"
+                a:
+                -  b: expected
+                +  b: actual
+            "}
         );
     }
 
     #[test]
     fn missing_scalar_key() {
-        let output = render(
-            &json!({"a": 1}),
-            &json!({"a": 1, "b": 2}),
+        let output = render(&json!({"a": 1}), &json!({"a": 1, "b": 2}));
+        assert_eq!(
+            output,
+            indoc! {"
+                -b: 2
+            "}
         );
-        assert_eq!(output, "-b: 2\n");
     }
 
     #[test]
     fn equal_values_render_empty() {
-        let output = render(
-            &json!({"a": 1}),
-            &json!({"a": 1}),
-        );
+        let output = render(&json!({"a": 1}), &json!({"a": 1}));
         assert_eq!(output, "");
+    }
+
+    #[test]
+    fn omitted_fields_comment() {
+        // inner object has 3 keys, expected checks 1 that differs. 2 fields omitted.
+        let output = render(
+            &json!({"outer": {"a": 1, "b": 2, "c": 3}}),
+            &json!({"outer": {"a": 99}}),
+        );
+        assert_eq!(
+            output,
+            indoc! {"
+                 outer:
+                   # 2 fields omitted
+                -  a: 99
+                +  a: 1
+            "}
+        );
     }
 }
