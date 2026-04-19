@@ -1,14 +1,14 @@
+use cool_diff::{
+    AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _,
+    MatchConfig, YamlRenderer,
+};
+
 /// Demonstrates checking that certain elements exist in an array,
 /// regardless of order or extra elements.
 ///
 /// Uses Contains mode with BestMatch to tolerate multiple matches
 /// without failing.
 fn main() {
-    use cool_diff::{
-        AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _,
-        MatchConfig, YamlRenderer,
-    };
-
     let actual = serde_json::json!({
         "inventory": [
             {"item": "apple", "count": 5},

@@ -1,13 +1,13 @@
+use cool_diff::{
+    ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _, MatchConfig, YamlRenderer,
+};
+
 /// Demonstrates diffing Kubernetes objects with key-based array matching.
 ///
 /// Kubernetes resources use `name` as the distinguished key for most array
 /// fields (containers, env vars, volumes, ports). This example shows how
 /// to configure that.
 fn main() {
-    use cool_diff::{
-        ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _, MatchConfig, YamlRenderer,
-    };
-
     let actual: serde_json::Value = serde_json::from_str(
         r#"{
             "apiVersion": "v1",

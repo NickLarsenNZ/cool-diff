@@ -1,14 +1,14 @@
+use cool_diff::{
+    AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _,
+    MatchConfig, YamlRenderer,
+};
+
 /// Demonstrates strict ambiguity handling.
 ///
 /// With `Strict` strategy (the default), the diff returns an error if
 /// multiple actual elements could match a single expected element.
 /// This forces the user to provide enough fields to disambiguate.
 fn main() {
-    use cool_diff::{
-        AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _,
-        MatchConfig, YamlRenderer,
-    };
-
     let actual = serde_json::json!({
         "users": [
             {"name": "Alice", "role": "admin"},

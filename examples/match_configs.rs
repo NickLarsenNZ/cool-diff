@@ -1,13 +1,13 @@
+use cool_diff::{
+    ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _, MatchConfig, YamlRenderer,
+};
+
 /// Demonstrates custom match configs with a mix of ordered and unordered arrays.
 ///
 /// - `steps` uses index-based matching (order matters, like a pipeline).
 /// - `tags` uses contains matching (just check presence, order irrelevant).
 /// - `contributors` uses key-based matching on `email`.
 fn main() {
-    use cool_diff::{
-        ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _, MatchConfig, YamlRenderer,
-    };
-
     let actual = serde_json::json!({
         "project": "cool-diff",
         "steps": ["build", "test", "deploy"],
