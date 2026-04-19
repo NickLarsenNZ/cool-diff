@@ -53,9 +53,12 @@ impl YamlRenderer {
                 omitted_count,
                 children,
             } => {
-                // Render the segment as a context line
+                // Render the segment as a context line.
+                // Key segments need a trailing colon (e.g. `spec:`), but
+                // array segments already include their content (e.g. `- name: FOO`).
                 let label = format_segment_label(segment);
-                push_line(output, indicator::UNCHANGED, indent, &format!("{label}:"));
+                let suffix = if matches!(segment, PathSegment::Key(_)) { ":" } else { "" };
+                push_line(output, indicator::UNCHANGED, indent, &format!("{label}{suffix}"));
 
                 let child_indent = indent + self.indent_width;
 
