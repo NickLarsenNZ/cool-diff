@@ -1024,6 +1024,49 @@ mod tests {
         let tree = diff(&actual, &expected, &config);
         assert!(tree.is_empty());
     }
+
+    // Null vs empty collection: YAML `foo:` (null) vs `foo: []` or `foo: {}`
+    // are different JSON types and should produce TypeMismatch.
+
+    #[test]
+    fn null_vs_empty_array() {
+        let actual = json!({"foo": null});
+        let expected = json!({"foo": []});
+        let tree = diff(&actual, &expected, &default_config());
+
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Leaf { kind, .. } = &tree.roots[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(
+            kind,
+            DiffKind::TypeMismatch {
+                actual_type: "null",
+                expected_type: "array",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn null_vs_empty_object() {
+        let actual = json!({"bar": null});
+        let expected = json!({"bar": {}});
+        let tree = diff(&actual, &expected, &default_config());
+
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Leaf { kind, .. } = &tree.roots[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(
+            kind,
+            DiffKind::TypeMismatch {
+                actual_type: "null",
+                expected_type: "object",
+                ..
+            }
+        ));
+    }
 }
 
 /// Returns a human-readable type name for a JSON value.
