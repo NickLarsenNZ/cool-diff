@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::config::{ArrayMatchMode, DiffConfig};
+use crate::config::{AmbiguousMatchStrategy, ArrayMatchMode, DiffConfig};
 use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
 
 /// Named constant to signify no differences were found.
@@ -170,19 +170,26 @@ fn diff_arrays(
     config: &DiffConfig,
     path: &str,
 ) -> DiffResult {
-    let mode = config
-        .match_config
-        .config_at(path)
+    let path_config = config.match_config.config_at(path);
+    let mode = path_config
         .map(|c| &c.mode)
         .unwrap_or(&config.default_array_mode);
+    let ambiguous_strategy = path_config
+        .and_then(|c| c.ambiguous_strategy.as_ref())
+        .unwrap_or(&config.default_ambiguous_strategy);
 
     match mode {
         ArrayMatchMode::Index => diff_arrays_by_index(actual_arr, expected_arr, config, path),
-        ArrayMatchMode::Key(key_field) => {
-            diff_arrays_by_key(actual_arr, expected_arr, key_field, config, path)
-        }
+        ArrayMatchMode::Key(key_field) => diff_arrays_by_key(
+            actual_arr,
+            expected_arr,
+            key_field,
+            ambiguous_strategy,
+            config,
+            path,
+        ),
         ArrayMatchMode::Contains => {
-            diff_arrays_by_contains(actual_arr, expected_arr, config, path)
+            diff_arrays_by_contains(actual_arr, expected_arr, ambiguous_strategy, config, path)
         }
     }
 }
@@ -257,6 +264,7 @@ fn diff_arrays_by_key(
     actual_arr: &[Value],
     expected_arr: &[Value],
     key_field: &str,
+    ambiguous_strategy: &AmbiguousMatchStrategy,
     config: &DiffConfig,
     path: &str,
 ) -> DiffResult {
@@ -313,8 +321,27 @@ fn diff_arrays_by_key(
             }
 
             // Multiple actual elements share the same key value
-            // TODO: ambiguous match handling
-            _ => unimplemented!("ambiguous match handling"),
+            _ => match ambiguous_strategy {
+                // TODO: return an error instead of panicking
+                AmbiguousMatchStrategy::Strict => {
+                    unimplemented!(
+                        "strict ambiguous match: {count} candidates for key `{key_field}` = `{expected_key_val}` at path `{path}`",
+                        count = candidates.len()
+                    );
+                }
+
+                AmbiguousMatchStrategy::BestMatch | AmbiguousMatchStrategy::Silent => {
+                    matched_count += 1;
+                    let segment = PathSegment::NamedElement {
+                        match_key: key_field.to_owned(),
+                        match_value: expected_key_val.to_owned(),
+                    };
+                    // Pick the candidate with the fewest diffs
+                    let best =
+                        pick_best_match(candidates.iter().copied(), expected_elem, config, path);
+                    push_diff_result(&mut children, segment, best);
+                }
+            },
         }
     }
 
@@ -339,6 +366,7 @@ fn diff_arrays_by_key(
 fn diff_arrays_by_contains(
     actual_arr: &[Value],
     expected_arr: &[Value],
+    ambiguous_strategy: &AmbiguousMatchStrategy,
     config: &DiffConfig,
     path: &str,
 ) -> DiffResult {
@@ -371,8 +399,21 @@ fn diff_arrays_by_contains(
             }
 
             // Multiple actual elements match
-            // TODO: ambiguous match handling
-            _ => unimplemented!("ambiguous match handling"),
+            _ => match ambiguous_strategy {
+                // TODO: return an error instead of panicking
+                AmbiguousMatchStrategy::Strict => {
+                    unimplemented!(
+                        "strict ambiguous match: {count} candidates in contains mode at path `{path}`",
+                        count = candidates.len()
+                    );
+                }
+
+                // All candidates are supersets of expected, so they all
+                // produce Equal. Just count any one as matched.
+                AmbiguousMatchStrategy::BestMatch | AmbiguousMatchStrategy::Silent => {
+                    matched_count += 1;
+                }
+            },
         }
     }
 
@@ -417,6 +458,68 @@ fn value_contains(actual: &Value, expected: &Value) -> bool {
         (Value::Array(a), Value::Array(e)) => a == e,
 
         _ => unreachable!("discriminant check above ensures matching types"),
+    }
+}
+
+/// Picks the candidate with the fewest diffs against the expected element.
+///
+/// Returns the `DiffResult` from comparing the best candidate. If any
+/// candidate produces `Equal`, that one wins immediately.
+fn pick_best_match<'a>(
+    candidates: impl Iterator<Item = &'a Value>,
+    expected: &Value,
+    config: &DiffConfig,
+    path: &str,
+) -> DiffResult {
+    let mut best: Option<DiffResult> = None;
+    // Fewest diffs wins. None means no candidate has been evaluated yet.
+    let mut best_count: Option<usize> = None;
+
+    for candidate in candidates {
+        let result = diff_values(candidate, expected, config, path);
+
+        // An exact match is the best possible outcome
+        if matches!(result, DiffResult::Equal) {
+            return result;
+        }
+
+        // Count direct child diffs as a rough proxy for "how different".
+        // A recursive leaf count would be more accurate but this is good
+        // enough for picking the least-bad match.
+        let count = match &result {
+            DiffResult::Children { nodes, .. } => nodes.len(),
+            DiffResult::Leaf(_) => 1,
+            DiffResult::Equal => unreachable!("handled above"),
+        };
+
+        // When a new best match is found, update it
+        if best_count.is_none() || count < best_count.expect("guarded by is_none check") {
+            best = Some(result);
+            best_count = Some(count);
+        }
+    }
+
+    best.unwrap_or(DiffResult::Equal)
+}
+
+/// Pushes a `DiffResult` as a child node, if it represents a difference.
+fn push_diff_result(children: &mut Vec<DiffNode>, segment: PathSegment, result: DiffResult) {
+    match result {
+        // Noop, no difference to push
+        DiffResult::Equal => {}
+
+        // Scalar or type mismatch, wrap as a leaf node
+        DiffResult::Leaf(kind) => {
+            children.push(DiffNode::leaf(segment, kind));
+        }
+
+        // Nested differences in a child object or array
+        DiffResult::Children {
+            nodes,
+            omitted_count,
+        } => {
+            children.push(DiffNode::container(segment, omitted_count, nodes));
+        }
     }
 }
 
@@ -808,6 +911,89 @@ mod tests {
         };
         // 0 matched out of 3 actual = 3 omitted
         assert_eq!(*omitted_count, 3);
+    }
+
+    fn config_with_key_and_strategy(
+        path: &str,
+        key: &str,
+        strategy: AmbiguousMatchStrategy,
+    ) -> DiffConfig {
+        use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        DiffConfig {
+            match_config: MatchConfig::new().with_config_at(
+                path,
+                ArrayMatchConfig::new(ArrayMatchMode::Key(key.to_owned()))
+                    .with_ambiguous_strategy(strategy),
+            ),
+            ..DiffConfig::default()
+        }
+    }
+
+    fn config_with_contains_and_strategy(
+        path: &str,
+        strategy: AmbiguousMatchStrategy,
+    ) -> DiffConfig {
+        use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        DiffConfig {
+            match_config: MatchConfig::new().with_config_at(
+                path,
+                ArrayMatchConfig::new(ArrayMatchMode::Contains).with_ambiguous_strategy(strategy),
+            ),
+            ..DiffConfig::default()
+        }
+    }
+
+    #[test]
+    fn ambiguous_key_best_match_picks_fewest_diffs() {
+        // Two actual elements share name "FOO". One has value "bar" (1 diff),
+        // the other has value "baz" (1 diff). Best match picks the one with
+        // the closest value to expected.
+        let config =
+            config_with_key_and_strategy("items", "name", AmbiguousMatchStrategy::BestMatch);
+        let actual = json!({"items": [
+            {"name": "FOO", "value": "wrong"},
+            {"name": "FOO", "value": "almost"}
+        ]});
+        let expected = json!({"items": [{"name": "FOO", "value": "almost"}]});
+        let tree = diff(&actual, &expected, &config);
+
+        // The second candidate is an exact match, so no diff
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn ambiguous_key_best_match_with_diffs() {
+        let config =
+            config_with_key_and_strategy("items", "name", AmbiguousMatchStrategy::BestMatch);
+        // Two candidates, both differ but second has fewer diffs
+        let actual = json!({"items": [
+            {"name": "FOO", "a": 1, "b": 2},
+            {"name": "FOO", "a": 99, "b": 99}
+        ]});
+        let expected = json!({"items": [{"name": "FOO", "a": 1, "b": 99}]});
+        let tree = diff(&actual, &expected, &config);
+
+        // First candidate: b differs (1 diff). Second: a differs (1 diff).
+        // Both have 1 diff, so first one seen wins. First has b: Changed.
+        assert!(!tree.is_empty());
+        let DiffNode::Container { children, .. } = &tree.roots[0] else {
+            panic!("expected Container for items");
+        };
+        assert_eq!(children.len(), 1);
+    }
+
+    #[test]
+    fn ambiguous_contains_best_match() {
+        // Two actual elements are both supersets of expected.
+        // BestMatch should accept without error.
+        let config = config_with_contains_and_strategy("items", AmbiguousMatchStrategy::BestMatch);
+        let actual = json!({"items": [
+            {"a": 1, "b": 2},
+            {"a": 1, "c": 3}
+        ]});
+        let expected = json!({"items": [{"a": 1}]});
+        let tree = diff(&actual, &expected, &config);
+        assert!(tree.is_empty());
     }
 }
 
