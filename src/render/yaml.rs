@@ -244,6 +244,33 @@ fn format_segment_label(segment: &PathSegment) -> String {
     }
 }
 
+/// Renders a single key-value pair as YAML.
+///
+/// Scalars render as `key: value` on one line. Objects and arrays render
+/// `key:` followed by the recursively rendered value on subsequent lines.
+/// Also used for array element first keys via `render_array_element`,
+/// where `key` is prefixed with `- ` (e.g. `- name`).
+fn render_key_value(
+    output: &mut String,
+    prefix: char,
+    indent: u16,
+    indent_width: u16,
+    key: &str,
+    value: &Value,
+) {
+    if is_scalar(value) {
+        push_line(
+            output,
+            prefix,
+            indent,
+            &format!("{key}: {val}", val = format_scalar(value)),
+        );
+    } else {
+        push_line(output, prefix, indent, &format!("{key}:"));
+        render_value(output, prefix, indent + indent_width, indent_width, value);
+    }
+}
+
 /// Recursively renders a JSON value as YAML lines with the given prefix.
 ///
 /// Used for rendering compound values in Missing and TypeMismatch diffs.
@@ -263,17 +290,7 @@ fn render_value(
 
         Value::Object(map) => {
             for (key, val) in map {
-                if is_scalar(val) {
-                    push_line(
-                        output,
-                        prefix,
-                        indent,
-                        &format!("{key}: {v}", v = format_scalar(val)),
-                    );
-                } else {
-                    push_line(output, prefix, indent, &format!("{key}:"));
-                    render_value(output, prefix, indent + indent_width, indent_width, val);
-                }
+                render_key_value(output, prefix, indent, indent_width, key, val);
             }
         }
 
@@ -284,7 +301,7 @@ fn render_value(
                         output,
                         prefix,
                         indent,
-                        &format!("- {v}", v = format_scalar(elem)),
+                        &format!("- {val}", val = format_scalar(elem)),
                     );
                 } else {
                     // Render first key on the same line as `- `, rest indented
@@ -310,44 +327,11 @@ fn render_array_element(
             for (key, val) in map {
                 if first {
                     // First key goes on the `- ` line
-                    if is_scalar(val) {
-                        push_line(
-                            output,
-                            prefix,
-                            indent,
-                            &format!("- {key}: {v}", v = format_scalar(val)),
-                        );
-                    } else {
-                        push_line(output, prefix, indent, &format!("- {key}:"));
-                        render_value(
-                            output,
-                            prefix,
-                            indent + indent_width,
-                            indent_width,
-                            val,
-                        );
-                    }
+                    render_key_value(output, prefix, indent, indent_width, &format!("- {key}"), val);
                     first = false;
                 } else {
                     // Subsequent keys are indented past the `- `
-                    let sub_indent = indent + indent_width;
-                    if is_scalar(val) {
-                        push_line(
-                            output,
-                            prefix,
-                            sub_indent,
-                            &format!("{key}: {v}", v = format_scalar(val)),
-                        );
-                    } else {
-                        push_line(output, prefix, sub_indent, &format!("{key}:"));
-                        render_value(
-                            output,
-                            prefix,
-                            sub_indent + indent_width,
-                            indent_width,
-                            val,
-                        );
-                    }
+                    render_key_value(output, prefix, indent + indent_width, indent_width, key, val);
                 }
             }
         }
