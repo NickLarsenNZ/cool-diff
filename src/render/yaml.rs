@@ -1,0 +1,272 @@
+use serde_json::Value;
+
+use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
+use crate::render::{indicator, DiffRenderer};
+
+/// Renders a `DiffTree` as YAML-like diff output.
+///
+/// Output uses unified diff conventions:
+/// - ` ` prefix for unchanged lines (reserves column 0 for diff indicators)
+/// - `-` prefix for expected (what we wanted but didn't get)
+/// - `+` prefix for actual (what we got instead)
+pub struct YamlRenderer {
+    /// Maximum lines to render per side for large values.
+    ///
+    /// `None` means no truncation.
+    pub max_lines_per_side: Option<u32>,
+
+    /// Number of spaces per indentation level.
+    pub indent_width: u16,
+}
+
+impl YamlRenderer {
+    /// Default maximum lines to render per side.
+    pub const DEFAULT_MAX_LINES_PER_SIDE: u32 = 20;
+
+    /// Default number of spaces per indentation level.
+    pub const DEFAULT_INDENT_WIDTH: u16 = 2;
+
+    pub fn new() -> Self {
+        Self {
+            max_lines_per_side: Some(Self::DEFAULT_MAX_LINES_PER_SIDE),
+            indent_width: Self::DEFAULT_INDENT_WIDTH,
+        }
+    }
+
+    /// Sets the maximum lines to render per side.
+    pub fn with_max_lines_per_side(mut self, max: Option<u32>) -> Self {
+        self.max_lines_per_side = max;
+        self
+    }
+
+    /// Sets the number of spaces per indentation level.
+    pub fn with_indent_width(mut self, width: u16) -> Self {
+        self.indent_width = width;
+        self
+    }
+
+    /// Renders a single diff node at the given indentation depth.
+    fn render_node(&self, node: &DiffNode, indent: u16, output: &mut String) {
+        match node {
+            DiffNode::Container {
+                segment,
+                omitted_count: _omitted_count,
+                children,
+            } => {
+                // Render the segment as a context line
+                let label = format_segment_label(segment);
+                push_line(output, indicator::UNCHANGED, indent, &format!("{label}:"));
+
+                // TODO: omitted count rendering
+
+                for child in children {
+                    render_child(self, child, indent, output);
+                }
+            }
+
+            DiffNode::Leaf { segment, kind } => {
+                render_leaf(segment, kind, indent, output);
+            }
+        }
+    }
+}
+
+impl Default for YamlRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DiffRenderer for YamlRenderer {
+    fn render(&self, tree: &DiffTree) -> String {
+        let mut output = String::new();
+        for node in &tree.roots {
+            // Root nodes start at indent level 0 (no leading spaces)
+            self.render_node(node, 0, &mut output);
+        }
+        output
+    }
+}
+
+/// Renders a child node, increasing indent by the configured width.
+///
+/// Array element segments (NamedElement, Index, Unmatched) get special
+/// handling: the `- ` prefix is rendered on the context line, and children
+/// are indented from there.
+fn render_child(renderer: &YamlRenderer, node: &DiffNode, parent_indent: u16, output: &mut String) {
+    let child_indent = parent_indent + renderer.indent_width;
+    renderer.render_node(node, child_indent, output);
+}
+
+/// Renders a leaf node (a single difference).
+fn render_leaf(segment: &PathSegment, kind: &DiffKind, indent: u16, output: &mut String) {
+    match kind {
+        // Changed values are always scalars (compound types produce
+        // Container nodes, not Leaf nodes). Safe to call format_scalar.
+        DiffKind::Changed { actual, expected } => {
+            let label = format_segment_label(segment);
+            push_line(output, indicator::EXPECTED, indent, &format!("{label}: {val}", val = format_scalar(expected)));
+            push_line(output, indicator::ACTUAL, indent, &format!("{label}: {val}", val = format_scalar(actual)));
+        }
+
+        DiffKind::Missing { expected } => {
+            let label = format_segment_label(segment);
+            if is_scalar(expected) {
+                // Scalar missing value, safe to call format_scalar
+                push_line(output, indicator::EXPECTED, indent, &format!("{label}: {val}", val = format_scalar(expected)));
+            } else {
+                // TODO: missing subtree rendering
+                push_line(output, indicator::EXPECTED, indent, &format!("{label}: ..."));
+            }
+        }
+
+        DiffKind::TypeMismatch { .. } => {
+            // TODO: type mismatch rendering
+            unimplemented!("type mismatch rendering");
+        }
+    }
+}
+
+/// Formats a path segment as a label for rendering.
+fn format_segment_label(segment: &PathSegment) -> String {
+    match segment {
+        PathSegment::Key(key) => key.clone(),
+        PathSegment::NamedElement {
+            match_key,
+            match_value,
+        } => format!("- {match_key}: {match_value}"),
+        PathSegment::Index(i) => format!("- # index {i}"),
+        PathSegment::Unmatched => "-".to_owned(),
+    }
+}
+
+/// Pushes a single line to the output with the given prefix and indentation.
+fn push_line(output: &mut String, prefix: char, indent: u16, content: &str) {
+    output.push(prefix);
+    for _ in 0..indent {
+        output.push(' ');
+    }
+    output.push_str(content);
+    output.push('\n');
+}
+
+/// Formats a JSON value as a YAML scalar.
+fn format_scalar(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_owned(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => {
+            if needs_yaml_quoting(s) {
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("\"{escaped}\"")
+            } else {
+                s.clone()
+            }
+        }
+        Value::Array(_) | Value::Object(_) => {
+            unreachable!("format_scalar called with compound value")
+        }
+    }
+}
+
+/// Returns true if a string needs quoting in YAML.
+fn needs_yaml_quoting(s: &str) -> bool {
+    if s.is_empty() {
+        return true;
+    }
+
+    // Values that YAML would interpret as non-strings
+    const SPECIAL: &[&str] = &[
+        "true", "false", "null", "yes", "no", "on", "off", "True", "False", "Null", "Yes", "No",
+        "On", "Off", "TRUE", "FALSE", "NULL", "YES", "NO", "ON", "OFF",
+    ];
+    if SPECIAL.contains(&s) {
+        return true;
+    }
+
+    // Strings that look like numbers
+    if s.parse::<f64>().is_ok() {
+        return true;
+    }
+
+    // Strings with special YAML characters
+    s.contains(':')
+        || s.contains('#')
+        || s.contains('\n')
+        || s.starts_with(' ')
+        || s.ends_with(' ')
+        || s.starts_with('{')
+        || s.starts_with('[')
+        || s.starts_with('*')
+        || s.starts_with('&')
+        || s.starts_with('!')
+        || s.starts_with('|')
+        || s.starts_with('>')
+}
+
+/// Returns true if a value is a scalar (not an object or array).
+fn is_scalar(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{diff, DiffConfig};
+    use serde_json::json;
+
+    fn render(actual: &Value, expected: &Value) -> String {
+        let config = DiffConfig::default();
+        let tree = diff(actual, expected, &config);
+        YamlRenderer::new().render(&tree)
+    }
+
+    #[test]
+    fn scalar_changed_renders_minus_plus() {
+        let output = render(
+            &json!({"name": "actual_value"}),
+            &json!({"name": "expected_value"}),
+        );
+        assert_eq!(
+            output,
+            "-name: expected_value\n\
+             +name: actual_value\n"
+        );
+    }
+
+    #[test]
+    fn nested_scalar_changed() {
+        let output = render(
+            &json!({"a": {"b": "actual"}}),
+            &json!({"a": {"b": "expected"}}),
+        );
+        assert_eq!(
+            output,
+            " a:\n\
+             -  b: expected\n\
+             +  b: actual\n"
+        );
+    }
+
+    #[test]
+    fn missing_scalar_key() {
+        let output = render(
+            &json!({"a": 1}),
+            &json!({"a": 1, "b": 2}),
+        );
+        assert_eq!(output, "-b: 2\n");
+    }
+
+    #[test]
+    fn equal_values_render_empty() {
+        let output = render(
+            &json!({"a": 1}),
+            &json!({"a": 1}),
+        );
+        assert_eq!(output, "");
+    }
+}

@@ -9,3 +9,4 @@ pub use config::{
 pub use diff::diff;
 pub use model::{DiffKind, DiffNode, DiffTree, PathSegment};
 pub use render::DiffRenderer;
+pub use render::yaml::YamlRenderer;
