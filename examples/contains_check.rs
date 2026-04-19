@@ -5,8 +5,8 @@
 /// without failing.
 fn main() {
     use cool_diff::{
-        AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig,
-        DiffRenderer as _, MatchConfig, YamlRenderer,
+        AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _,
+        MatchConfig, YamlRenderer,
     };
 
     let actual = serde_json::json!({
@@ -37,7 +37,7 @@ fn main() {
         ..DiffConfig::default()
     };
 
-    let tree = cool_diff::diff(&actual, &expected, &config);
+    let tree = cool_diff::diff(&actual, &expected, &config).unwrap();
 
     if tree.is_empty() {
         println!("All expected items found.");

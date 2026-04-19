@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use cool_diff::{
-    diff, ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer, MatchConfig, YamlRenderer,
+    ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer, MatchConfig, YamlRenderer, diff,
 };
 use rstest::rstest;
 use serde::Deserialize;
@@ -55,7 +55,7 @@ fn fixture_test(#[files("tests/fixtures/*.yaml")] path: PathBuf) {
     let (actual, expected) = load_fixture(&yaml);
 
     let config = k8s_config();
-    let tree = diff(&actual, &expected, &config);
+    let tree = diff(&actual, &expected, &config).expect("diff with valid fixture inputs");
     let output = YamlRenderer::new()
         .with_max_lines_per_side(None)
         .render(&tree);

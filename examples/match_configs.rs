@@ -41,7 +41,7 @@ fn main() {
         ..DiffConfig::default()
     };
 
-    let tree = cool_diff::diff(&actual, &expected, &config);
+    let tree = cool_diff::diff(&actual, &expected, &config).unwrap();
     let output = YamlRenderer::new().render(&tree);
     print!("{output}");
 }

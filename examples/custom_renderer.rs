@@ -89,7 +89,7 @@ fn main() {
     });
 
     let config = cool_diff::DiffConfig::default();
-    let tree = cool_diff::diff(&actual, &expected, &config);
+    let tree = cool_diff::diff(&actual, &expected, &config).unwrap();
     let output = PlainTextRenderer.render(&tree);
     print!("{output}");
 }

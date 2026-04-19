@@ -58,8 +58,17 @@ impl YamlRenderer {
                 // array segments already include their content (e.g. `- name: FOO`).
                 // Index segments include the index as a comment (e.g. `- # index 0`).
                 let label = format_segment_label(segment);
-                let suffix = if matches!(segment, PathSegment::Key(_)) { ":" } else { "" };
-                push_line(output, indicator::CONTEXT, indent, &format!("{label}{suffix}"));
+                let suffix = if matches!(segment, PathSegment::Key(_)) {
+                    ":"
+                } else {
+                    ""
+                };
+                push_line(
+                    output,
+                    indicator::CONTEXT,
+                    indent,
+                    &format!("{label}{suffix}"),
+                );
 
                 let child_indent = indent + self.indent_width;
 
@@ -230,7 +239,10 @@ fn render_leaf(
                 output,
                 indicator::EXPECTED,
                 indent,
-                &format!("{expected_header:<width$} # expected: {expected_type}", width = max_len),
+                &format!(
+                    "{expected_header:<width$} # expected: {expected_type}",
+                    width = max_len
+                ),
             );
             if !is_scalar(expected) {
                 render_value_truncated(
@@ -248,7 +260,10 @@ fn render_leaf(
                 output,
                 indicator::ACTUAL,
                 indent,
-                &format!("{actual_header:<width$} # actual: {actual_type}", width = max_len),
+                &format!(
+                    "{actual_header:<width$} # actual: {actual_type}",
+                    width = max_len
+                ),
             );
             if !is_scalar(actual) {
                 render_value_truncated(
@@ -419,13 +434,7 @@ fn render_key_value(
 ///
 /// Used for rendering compound values in Missing and TypeMismatch diffs.
 /// Each line is prefixed with the indicator character (e.g. `-` for expected).
-fn render_value(
-    output: &mut String,
-    prefix: char,
-    indent: u16,
-    indent_width: u16,
-    value: &Value,
-) {
+fn render_value(output: &mut String, prefix: char, indent: u16, indent_width: u16, value: &Value) {
     match value {
         // Scalars render as a single value (caller handles the key)
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
@@ -471,11 +480,25 @@ fn render_array_element(
             for (key, val) in map {
                 if first {
                     // First key goes on the `- ` line
-                    render_key_value(output, prefix, indent, indent_width, &format!("- {key}"), val);
+                    render_key_value(
+                        output,
+                        prefix,
+                        indent,
+                        indent_width,
+                        &format!("- {key}"),
+                        val,
+                    );
                     first = false;
                 } else {
                     // Subsequent keys are indented past the `- `
-                    render_key_value(output, prefix, indent + indent_width, indent_width, key, val);
+                    render_key_value(
+                        output,
+                        prefix,
+                        indent + indent_width,
+                        indent_width,
+                        key,
+                        val,
+                    );
                 }
             }
         }
@@ -570,7 +593,7 @@ mod tests {
 
     fn render(actual: &Value, expected: &Value) -> String {
         let config = DiffConfig::default();
-        let tree = diff(actual, expected, &config);
+        let tree = diff(actual, expected, &config).expect("diff with valid inputs");
         YamlRenderer::new().render(&tree)
     }
 
@@ -653,10 +676,7 @@ mod tests {
 
     #[test]
     fn missing_object_subtree() {
-        let output = render(
-            &json!({"a": 1}),
-            &json!({"a": 1, "b": {"x": 1, "y": 2}}),
-        );
+        let output = render(&json!({"a": 1}), &json!({"a": 1, "b": {"x": 1, "y": 2}}));
         assert_eq!(
             output,
             indoc! {"
@@ -669,10 +689,7 @@ mod tests {
 
     #[test]
     fn missing_array_subtree() {
-        let output = render(
-            &json!({"a": 1}),
-            &json!({"a": 1, "items": [1, 2, 3]}),
-        );
+        let output = render(&json!({"a": 1}), &json!({"a": 1, "items": [1, 2, 3]}));
         assert_eq!(
             output,
             indoc! {"
@@ -707,7 +724,7 @@ mod tests {
         let config = DiffConfig::default();
         let actual = json!({"a": 1});
         let expected = json!({"a": 1, "b": {"p": 1, "q": 2, "r": 3, "s": 4}});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         let output = YamlRenderer::new()
             .with_max_lines_per_side(Some(2))
             .render(&tree);
@@ -727,7 +744,7 @@ mod tests {
         let config = DiffConfig::default();
         let actual = json!({"a": 1});
         let expected = json!({"a": 1, "b": {"x": 1, "y": 2, "z": 3}});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         let output = YamlRenderer::new()
             .with_max_lines_per_side(None)
             .render(&tree);

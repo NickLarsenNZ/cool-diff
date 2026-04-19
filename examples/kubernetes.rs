@@ -85,7 +85,7 @@ fn main() {
         ..DiffConfig::default()
     };
 
-    let tree = cool_diff::diff(&actual, &expected, &config);
+    let tree = cool_diff::diff(&actual, &expected, &config).unwrap();
 
     if tree.is_empty() {
         println!("Pod matches expected state.");

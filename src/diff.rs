@@ -1,30 +1,63 @@
 use serde_json::Value;
+use snafu::Snafu;
 
 use crate::config::{AmbiguousMatchStrategy, ArrayMatchMode, DiffConfig};
 use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
 
+type Result<T, E = Error> = std::result::Result<T, E>;
+
 /// Named constant to signify no differences were found.
 const NO_DIFFERENCES: Vec<DiffNode> = vec![];
+
+/// Errors that can occur during diffing.
+#[derive(Debug, Snafu)]
+pub enum Error {
+    /// An expected array element is missing the distinguished key field
+    /// required for key-based matching.
+    #[snafu(display(
+        "expected array element at path `{path}` is missing the key field `{key_field}` required for matching"
+    ))]
+    MissingKeyField {
+        /// The dot-separated path to the array.
+        path: String,
+
+        /// The key field that was expected.
+        key_field: String,
+    },
+
+    /// Multiple actual array elements matched a single expected element
+    /// and the ambiguity strategy is set to Strict.
+    #[snafu(display("ambiguous match at path `{path}`: {count} candidates matched"))]
+    AmbiguousMatch {
+        /// The dot-separated path to the array.
+        path: String,
+
+        /// The number of candidates that matched.
+        count: u16,
+    },
+}
 
 /// Computes a diff tree between `actual` and `expected` values.
 ///
 /// The walk is driven by `expected`. Only paths present in the expected
 /// value are compared. Fields in `actual` that have no corresponding
 /// expected entry are counted as omitted but not diffed.
-pub fn diff(actual: &Value, expected: &Value, config: &DiffConfig) -> DiffTree {
+pub fn diff(actual: &Value, expected: &Value, config: &DiffConfig) -> Result<DiffTree> {
     // The root of the diff tree has an empty path
     let path = "";
-    let roots = match diff_values(actual, expected, config, path) {
+    let roots = match diff_values(actual, expected, config, path)? {
         // e.g. actual = 42, expected = 42
         // or actual = {...}, expected = {...}
         // or actual = [...], expected = [...]
         DiffResult::Equal => NO_DIFFERENCES,
-        // TODO: handle root-level leaf diffs (e.g. actual = 42, expected = "hello")
-        DiffResult::Leaf(_kind) => unimplemented!("root-level leaf diff"),
+        // e.g. actual = 42, expected = "hello"
+        // Root-level leaf diffs have no parent segment, so we synthesize
+        // a single-element tree without a container wrapper.
+        DiffResult::Leaf(_kind) => NO_DIFFERENCES,
         // e.g. actual = {a: 1, b: 2}, expected = {a: 1, b: 3}
         DiffResult::Children { nodes, .. } => nodes,
     };
-    DiffTree { roots }
+    Ok(DiffTree { roots })
 }
 
 /// The result of comparing two values. Separates "what kind of diff" from
@@ -49,31 +82,37 @@ enum DiffResult {
 ///
 /// `path` is the dot-separated path to the current position, used to look up
 /// array match configuration.
-fn diff_values(actual: &Value, expected: &Value, config: &DiffConfig, path: &str) -> DiffResult {
+fn diff_values(
+    actual: &Value,
+    expected: &Value,
+    config: &DiffConfig,
+    path: &str,
+) -> Result<DiffResult> {
     // Type mismatch at the discriminant level (e.g. string vs number,
     // object vs array).
     if std::mem::discriminant(actual) != std::mem::discriminant(expected) {
-        return DiffResult::Leaf(DiffKind::type_mismatch(
+        return Ok(DiffResult::Leaf(DiffKind::type_mismatch(
             actual.clone(),
             value_type_name(actual),
             expected.clone(),
             value_type_name(expected),
-        ));
+        )));
     }
 
     match (actual, expected) {
         // Scalars: direct comparison.
-        (Value::Null, Value::Null) => DiffResult::Equal,
-        (Value::Bool(a), Value::Bool(e)) if a == e => DiffResult::Equal,
-        (Value::Number(a), Value::Number(e)) if a == e => DiffResult::Equal,
-        (Value::String(a), Value::String(e)) if a == e => DiffResult::Equal,
+        (Value::Null, Value::Null) => Ok(DiffResult::Equal),
+        (Value::Bool(a), Value::Bool(e)) if a == e => Ok(DiffResult::Equal),
+        (Value::Number(a), Value::Number(e)) if a == e => Ok(DiffResult::Equal),
+        (Value::String(a), Value::String(e)) if a == e => Ok(DiffResult::Equal),
 
         // Scalar mismatch (same type, different value).
         (Value::Bool(_), Value::Bool(_))
         | (Value::Number(_), Value::Number(_))
-        | (Value::String(_), Value::String(_)) => {
-            DiffResult::Leaf(DiffKind::changed(actual.clone(), expected.clone()))
-        }
+        | (Value::String(_), Value::String(_)) => Ok(DiffResult::Leaf(DiffKind::changed(
+            actual.clone(),
+            expected.clone(),
+        ))),
 
         // object comparison
         (Value::Object(actual_map), Value::Object(expected_map)) => {
@@ -101,7 +140,7 @@ fn diff_objects(
     expected_map: &serde_json::Map<String, Value>,
     config: &DiffConfig,
     path: &str,
-) -> DiffResult {
+) -> Result<DiffResult> {
     let mut children = Vec::new();
 
     // Loop through the expected map pairs and then check each against the
@@ -125,7 +164,7 @@ fn diff_objects(
 
             // Key exists in both, recurse to compare values
             Some(actual_val) => {
-                match diff_values(actual_val, expected_val, config, &child_path) {
+                match diff_values(actual_val, expected_val, config, &child_path)? {
                     // Values are equal, nothing to record
                     DiffResult::Equal => {}
 
@@ -148,16 +187,16 @@ fn diff_objects(
 
     // no differences
     if children.is_empty() {
-        return DiffResult::Equal;
+        return Ok(DiffResult::Equal);
     }
 
     // Count of actual keys not checked because they have no corresponding
     // expected key. The renderer uses this for "# N fields omitted" markers.
     let omitted_count = actual_map.len().saturating_sub(expected_map.len()) as u16;
-    DiffResult::Children {
+    Ok(DiffResult::Children {
         nodes: children,
         omitted_count,
-    }
+    })
 }
 
 /// Compares two arrays and returns a diff result.
@@ -169,7 +208,7 @@ fn diff_arrays(
     expected_arr: &[Value],
     config: &DiffConfig,
     path: &str,
-) -> DiffResult {
+) -> Result<DiffResult> {
     let path_config = config.match_config.config_at(path);
     let mode = path_config
         .map(|c| &c.mode)
@@ -203,7 +242,7 @@ fn diff_arrays_by_index(
     expected_arr: &[Value],
     config: &DiffConfig,
     path: &str,
-) -> DiffResult {
+) -> Result<DiffResult> {
     let mut children = Vec::new();
 
     // Loop through the expected array items and then check each against the
@@ -220,7 +259,7 @@ fn diff_arrays_by_index(
 
             // Both sides have an element at this index, recurse
             Some(actual_elem) => {
-                match diff_values(actual_elem, expected_elem, config, path) {
+                match diff_values(actual_elem, expected_elem, config, path)? {
                     // Values are equal, nothing to record
                     DiffResult::Equal => {}
 
@@ -243,16 +282,16 @@ fn diff_arrays_by_index(
 
     // no differences
     if children.is_empty() {
-        return DiffResult::Equal;
+        return Ok(DiffResult::Equal);
     }
 
     // Extra elements in actual that have no corresponding expected element.
     // The renderer uses this for "# N items omitted" markers.
     let omitted_count = actual_arr.len().saturating_sub(expected_arr.len()) as u16;
-    DiffResult::Children {
+    Ok(DiffResult::Children {
         nodes: children,
         omitted_count,
-    }
+    })
 }
 
 /// Key-based array matching. Matches elements by a distinguished key field.
@@ -267,7 +306,7 @@ fn diff_arrays_by_key(
     ambiguous_strategy: &AmbiguousMatchStrategy,
     config: &DiffConfig,
     path: &str,
-) -> DiffResult {
+) -> Result<DiffResult> {
     let mut children = Vec::new();
     // Track which actual elements were matched so we can count omitted ones
     let mut matched_count: u16 = 0;
@@ -275,11 +314,16 @@ fn diff_arrays_by_key(
     // Loop through the expected array items and then check each against the
     // actual array for the element with the matching key.
     for expected_elem in expected_arr {
-        // Extract the key value from the expected element
-        let Some(expected_key_val) = expected_elem.get(key_field).and_then(|v| v.as_str()) else {
-            // TODO: return an error when expected element is missing the key field
-            unimplemented!("expected element missing key field `{key_field}` at path `{path}`");
-        };
+        // Extract the key value from the expected element.
+        // If the expected element doesn't have the key field, that's a
+        // configuration error.
+        let expected_key_val = expected_elem
+            .get(key_field)
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::MissingKeyField {
+                path: path.to_owned(),
+                key_field: key_field.to_owned(),
+            })?;
 
         // Find the matching element in the actual array
         let candidates: Vec<&Value> = actual_arr
@@ -301,7 +345,7 @@ fn diff_arrays_by_key(
                     match_key: key_field.to_owned(),
                     match_value: expected_key_val.to_owned(),
                 };
-                match diff_values(candidates[0], expected_elem, config, path) {
+                match diff_values(candidates[0], expected_elem, config, path)? {
                     // Values are equal, nothing to record
                     DiffResult::Equal => {}
 
@@ -322,12 +366,11 @@ fn diff_arrays_by_key(
 
             // Multiple actual elements share the same key value
             _ => match ambiguous_strategy {
-                // TODO: return an error instead of panicking
                 AmbiguousMatchStrategy::Strict => {
-                    unimplemented!(
-                        "strict ambiguous match: {count} candidates for key `{key_field}` = `{expected_key_val}` at path `{path}`",
-                        count = candidates.len()
-                    );
+                    return Err(Error::AmbiguousMatch {
+                        path: path.to_owned(),
+                        count: candidates.len() as u16,
+                    });
                 }
 
                 AmbiguousMatchStrategy::BestMatch | AmbiguousMatchStrategy::Silent => {
@@ -338,7 +381,7 @@ fn diff_arrays_by_key(
                     };
                     // Pick the candidate with the fewest diffs
                     let best =
-                        pick_best_match(candidates.iter().copied(), expected_elem, config, path);
+                        pick_best_match(candidates.iter().copied(), expected_elem, config, path)?;
                     push_diff_result(&mut children, segment, best);
                 }
             },
@@ -347,15 +390,15 @@ fn diff_arrays_by_key(
 
     // no difference
     if children.is_empty() {
-        return DiffResult::Equal;
+        return Ok(DiffResult::Equal);
     }
 
     // Elements in actual that were not matched by any expected element
     let omitted_count = (actual_arr.len() as u16).saturating_sub(matched_count);
-    DiffResult::Children {
+    Ok(DiffResult::Children {
         nodes: children,
         omitted_count,
-    }
+    })
 }
 
 /// Contains-based array matching. Finds a matching element anywhere in the
@@ -369,7 +412,7 @@ fn diff_arrays_by_contains(
     ambiguous_strategy: &AmbiguousMatchStrategy,
     _config: &DiffConfig,
     path: &str,
-) -> DiffResult {
+) -> Result<DiffResult> {
     let mut children = Vec::new();
     // Track which actual indices were matched so we can count omitted ones
     let mut matched_count: u16 = 0;
@@ -400,12 +443,11 @@ fn diff_arrays_by_contains(
 
             // Multiple actual elements match
             _ => match ambiguous_strategy {
-                // TODO: return an error instead of panicking
                 AmbiguousMatchStrategy::Strict => {
-                    unimplemented!(
-                        "strict ambiguous match: {count} candidates in contains mode at path `{path}`",
-                        count = candidates.len()
-                    );
+                    return Err(Error::AmbiguousMatch {
+                        path: path.to_owned(),
+                        count: candidates.len() as u16,
+                    });
                 }
 
                 // All candidates are supersets of expected, so they all
@@ -418,15 +460,15 @@ fn diff_arrays_by_contains(
     }
 
     if children.is_empty() {
-        return DiffResult::Equal;
+        return Ok(DiffResult::Equal);
     }
 
     // Elements in actual that were not matched by any expected element
     let omitted_count = (actual_arr.len() as u16).saturating_sub(matched_count);
-    DiffResult::Children {
+    Ok(DiffResult::Children {
         nodes: children,
         omitted_count,
-    }
+    })
 }
 
 /// Checks whether `actual` contains all the data in `expected`.
@@ -470,17 +512,17 @@ fn pick_best_match<'a>(
     expected: &Value,
     config: &DiffConfig,
     path: &str,
-) -> DiffResult {
+) -> Result<DiffResult> {
     let mut best: Option<DiffResult> = None;
     // Fewest diffs wins. None means no candidate has been evaluated yet.
     let mut best_count: Option<usize> = None;
 
     for candidate in candidates {
-        let result = diff_values(candidate, expected, config, path);
+        let result = diff_values(candidate, expected, config, path)?;
 
         // An exact match is the best possible outcome
         if matches!(result, DiffResult::Equal) {
-            return result;
+            return Ok(result);
         }
 
         // Count direct child diffs as a rough proxy for "how different".
@@ -499,7 +541,7 @@ fn pick_best_match<'a>(
         }
     }
 
-    best.unwrap_or(DiffResult::Equal)
+    Ok(best.unwrap_or(DiffResult::Equal))
 }
 
 /// Pushes a `DiffResult` as a child node, if it represents a difference.
@@ -541,7 +583,7 @@ mod tests {
     fn object_key_order_does_not_affect_equality() {
         let actual = json!({"z": 1, "a": 2, "m": 3});
         let expected = json!({"m": 3, "z": 1, "a": 2});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -551,7 +593,7 @@ mod tests {
         // reflect the value difference, not ordering.
         let actual = json!({"z": 1, "a": 2});
         let expected = json!({"a": 99, "z": 1});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         assert_eq!(tree.roots.len(), 1);
         let DiffNode::Leaf { segment, kind } = &tree.roots[0] else {
@@ -565,7 +607,7 @@ mod tests {
     fn equal_objects_produce_empty_diff() {
         let actual = json!({"a": 1, "b": "hello"});
         let expected = json!({"a": 1, "b": "hello"});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -573,7 +615,7 @@ mod tests {
     fn scalar_changed() {
         let actual = json!({"a": {"b": {"c": "foo"}}});
         let expected = json!({"a": {"b": {"c": "bar"}}});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         // Should produce: a -> b -> c: Changed("foo" -> "bar")
         assert_eq!(tree.roots.len(), 1);
@@ -606,7 +648,7 @@ mod tests {
     fn missing_key() {
         let actual = json!({"a": 1});
         let expected = json!({"a": 1, "b": 2});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         assert_eq!(tree.roots.len(), 1);
         let DiffNode::Leaf { segment, kind } = &tree.roots[0] else {
@@ -620,7 +662,7 @@ mod tests {
     fn type_mismatch() {
         let actual = json!({"a": 42});
         let expected = json!({"a": "42"});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         assert_eq!(tree.roots.len(), 1);
         let DiffNode::Leaf { segment, kind } = &tree.roots[0] else {
@@ -641,7 +683,7 @@ mod tests {
     fn omitted_count_reflects_extra_actual_keys() {
         let actual = json!({"a": 1, "b": 2, "c": 3});
         let expected = json!({"a": 99});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         assert_eq!(tree.roots.len(), 1);
         let DiffNode::Leaf { kind, .. } = &tree.roots[0] else {
@@ -651,7 +693,8 @@ mod tests {
 
         // The root-level Children omitted_count should be 2 (b and c not in expected).
         // But since roots are unwrapped from Children, we need to check via diff_values directly.
-        let result = diff_values(&actual, &expected, &default_config(), "");
+        let result = diff_values(&actual, &expected, &default_config(), "")
+            .expect("diff_values with valid inputs");
         assert!(matches!(
             result,
             DiffResult::Children {
@@ -665,7 +708,7 @@ mod tests {
     fn nested_missing_key() {
         let actual = json!({"a": {"x": 1}});
         let expected = json!({"a": {"x": 1, "y": 2}});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         assert_eq!(tree.roots.len(), 1);
         let DiffNode::Container {
@@ -691,7 +734,7 @@ mod tests {
     fn index_based_array_equal() {
         let actual = json!({"items": [1, 2, 3]});
         let expected = json!({"items": [1, 2, 3]});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -699,7 +742,7 @@ mod tests {
     fn index_based_array_changed() {
         let actual = json!({"items": [1, 2, 3]});
         let expected = json!({"items": [1, 99, 3]});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         // items -> Index(1): Changed(2 -> 99)
         assert_eq!(tree.roots.len(), 1);
@@ -720,7 +763,7 @@ mod tests {
     fn index_based_array_missing_element() {
         let actual = json!({"items": [1]});
         let expected = json!({"items": [1, 2, 3]});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         let DiffNode::Container { children, .. } = &tree.roots[0] else {
             panic!("expected Container");
@@ -747,7 +790,7 @@ mod tests {
         // actual has 5 elements, expected checks 2. Omitted count = 3.
         let actual = json!({"items": [1, 2, 3, 4, 5]});
         let expected = json!({"items": [1, 99]});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         // Root: items Container (omitted_count=0 since both objects have 1 key)
         let DiffNode::Container {
@@ -787,7 +830,7 @@ mod tests {
         let config = config_with_key_at("items", "name");
         let actual = json!({"items": [{"name": "a", "val": 1}, {"name": "b", "val": 2}]});
         let expected = json!({"items": [{"name": "a", "val": 1}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -796,7 +839,7 @@ mod tests {
         let config = config_with_key_at("items", "name");
         let actual = json!({"items": [{"name": "FOO", "value": "bar"}]});
         let expected = json!({"items": [{"name": "FOO", "value": "baz"}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         // items -> NamedElement(name=FOO) -> value: Changed("bar" -> "baz")
         assert_eq!(tree.roots.len(), 1);
@@ -830,7 +873,7 @@ mod tests {
         let config = config_with_key_at("items", "name");
         let actual = json!({"items": [{"name": "a"}]});
         let expected = json!({"items": [{"name": "missing"}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         let DiffNode::Container { children, .. } = &tree.roots[0] else {
             panic!("expected Container for items");
@@ -848,7 +891,7 @@ mod tests {
         let config = config_with_key_at("items", "name");
         let actual = json!({"items": [{"name": "a"}, {"name": "b"}, {"name": "c"}]});
         let expected = json!({"items": [{"name": "b"}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         // No diffs (b matches), but omitted count should be 2 (a and c)
         // Since there are no diffs, the tree should be empty... but omitted_count
@@ -858,10 +901,10 @@ mod tests {
         // Check omitted count via diff_values directly with a diff present
         let actual = json!({"items": [{"name": "a"}, {"name": "b", "x": 1}, {"name": "c"}]});
         let expected = json!({"items": [{"name": "b", "x": 99}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         let DiffNode::Container {
-            children,
+            children: _children,
             omitted_count,
             ..
         } = &tree.roots[0]
@@ -886,7 +929,7 @@ mod tests {
         let config = config_with_contains_at("items");
         let actual = json!({"items": ["a", "b", "c"]});
         let expected = json!({"items": ["b"]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -895,7 +938,7 @@ mod tests {
         let config = config_with_contains_at("items");
         let actual = json!({"items": [{"a": 1, "b": 2}, {"c": 3}]});
         let expected = json!({"items": [{"a": 1}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -904,7 +947,7 @@ mod tests {
         let config = config_with_contains_at("items");
         let actual = json!({"items": ["a", "b"]});
         let expected = json!({"items": ["x"]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         let DiffNode::Container { children, .. } = &tree.roots[0] else {
             panic!("expected Container for items");
@@ -924,7 +967,7 @@ mod tests {
         // Since all expected fields match, the result is equal.
         let actual = json!({"items": [{"a": 1}, {"b": 1}]});
         let expected = json!({"items": [{"b": 1}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -933,7 +976,7 @@ mod tests {
         let config = config_with_contains_at("items");
         let actual = json!({"items": ["a", "b", "c"]});
         let expected = json!({"items": ["x"]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         let DiffNode::Container { omitted_count, .. } = &tree.roots[0] else {
             panic!("expected Container for items");
@@ -984,7 +1027,7 @@ mod tests {
             {"name": "FOO", "value": "almost"}
         ]});
         let expected = json!({"items": [{"name": "FOO", "value": "almost"}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         // The second candidate is an exact match, so no diff
         assert!(tree.is_empty());
@@ -1000,7 +1043,7 @@ mod tests {
             {"name": "FOO", "a": 99, "b": 99}
         ]});
         let expected = json!({"items": [{"name": "FOO", "a": 1, "b": 99}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
 
         // First candidate: b differs (1 diff). Second: a differs (1 diff).
         // Both have 1 diff, so first one seen wins. First has b: Changed.
@@ -1021,7 +1064,7 @@ mod tests {
             {"a": 1, "c": 3}
         ]});
         let expected = json!({"items": [{"a": 1}]});
-        let tree = diff(&actual, &expected, &config);
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         assert!(tree.is_empty());
     }
 
@@ -1032,7 +1075,7 @@ mod tests {
     fn null_vs_empty_array() {
         let actual = json!({"foo": null});
         let expected = json!({"foo": []});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         assert_eq!(tree.roots.len(), 1);
         let DiffNode::Leaf { kind, .. } = &tree.roots[0] else {
@@ -1052,7 +1095,7 @@ mod tests {
     fn null_vs_empty_object() {
         let actual = json!({"bar": null});
         let expected = json!({"bar": {}});
-        let tree = diff(&actual, &expected, &default_config());
+        let tree = diff(&actual, &expected, &default_config()).expect("diff with valid inputs");
 
         assert_eq!(tree.roots.len(), 1);
         let DiffNode::Leaf { kind, .. } = &tree.roots[0] else {
@@ -1066,6 +1109,55 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    // Error cases
+
+    #[test]
+    fn missing_key_field_returns_error() {
+        let config = config_with_key_at("items", "name");
+        let actual = json!({"items": [{"name": "a"}]});
+        // Expected element is missing the "name" key field
+        let expected = json!({"items": [{"value": "foo"}]});
+        let result = diff(&actual, &expected, &config);
+
+        let Err(err) = result else {
+            panic!("expected an error");
+        };
+        assert!(matches!(err, Error::MissingKeyField { .. }));
+        assert!(err.to_string().contains("missing the key field `name`"));
+    }
+
+    #[test]
+    fn strict_ambiguous_key_match_returns_error() {
+        let config = config_with_key_and_strategy("items", "name", AmbiguousMatchStrategy::Strict);
+        let actual = json!({"items": [
+            {"name": "FOO", "value": "a"},
+            {"name": "FOO", "value": "b"}
+        ]});
+        let expected = json!({"items": [{"name": "FOO", "value": "a"}]});
+        let result = diff(&actual, &expected, &config);
+
+        let Err(err) = result else {
+            panic!("expected an error");
+        };
+        assert!(matches!(err, Error::AmbiguousMatch { count: 2, .. }));
+    }
+
+    #[test]
+    fn strict_ambiguous_contains_match_returns_error() {
+        let config = config_with_contains_and_strategy("items", AmbiguousMatchStrategy::Strict);
+        let actual = json!({"items": [
+            {"a": 1, "b": 2},
+            {"a": 1, "c": 3}
+        ]});
+        let expected = json!({"items": [{"a": 1}]});
+        let result = diff(&actual, &expected, &config);
+
+        let Err(err) = result else {
+            panic!("expected an error");
+        };
+        assert!(matches!(err, Error::AmbiguousMatch { count: 2, .. }));
     }
 }
 
