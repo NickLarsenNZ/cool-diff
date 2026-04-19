@@ -532,6 +532,35 @@ mod tests {
         DiffConfig::default()
     }
 
+    // Key ordering in objects is irrelevant because serde_json::Map uses
+    // BTreeMap, which normalises key order after deserialization. These
+    // tests document that guarantee so a future change (e.g. switching
+    // to preserve-order) would surface here.
+
+    #[test]
+    fn object_key_order_does_not_affect_equality() {
+        let actual = json!({"z": 1, "a": 2, "m": 3});
+        let expected = json!({"m": 3, "z": 1, "a": 2});
+        let tree = diff(&actual, &expected, &default_config());
+        assert!(tree.is_empty());
+    }
+
+    #[test]
+    fn object_key_order_does_not_affect_diffs() {
+        // Keys written in different order, but the diff should only
+        // reflect the value difference, not ordering.
+        let actual = json!({"z": 1, "a": 2});
+        let expected = json!({"a": 99, "z": 1});
+        let tree = diff(&actual, &expected, &default_config());
+
+        assert_eq!(tree.roots.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &tree.roots[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "a"));
+        assert!(matches!(kind, DiffKind::Changed { .. }));
+    }
+
     #[test]
     fn equal_objects_produce_empty_diff() {
         let actual = json!({"a": 1, "b": "hello"});
