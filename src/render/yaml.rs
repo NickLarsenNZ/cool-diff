@@ -149,12 +149,13 @@ fn render_leaf(
                 // Compound missing value. Render the key, then the full
                 // expected value as `-` prefixed YAML lines.
                 push_line(output, indicator::EXPECTED, indent, &format!("{label}:"));
-                render_value(
+                render_value_truncated(
                     output,
                     indicator::EXPECTED,
                     indent + renderer.indent_width,
                     renderer.indent_width,
                     expected,
+                    renderer.max_lines_per_side,
                 );
             }
         }
@@ -190,12 +191,13 @@ fn render_leaf(
                 &format!("{expected_header:<width$} # expected: {expected_type}", width = max_len),
             );
             if !is_scalar(expected) {
-                render_value(
+                render_value_truncated(
                     output,
                     indicator::EXPECTED,
                     indent + renderer.indent_width,
                     renderer.indent_width,
                     expected,
+                    renderer.max_lines_per_side,
                 );
             }
 
@@ -207,12 +209,13 @@ fn render_leaf(
                 &format!("{actual_header:<width$} # actual: {actual_type}", width = max_len),
             );
             if !is_scalar(actual) {
-                render_value(
+                render_value_truncated(
                     output,
                     indicator::ACTUAL,
                     indent + renderer.indent_width,
                     renderer.indent_width,
                     actual,
+                    renderer.max_lines_per_side,
                 );
             }
         }
@@ -241,6 +244,46 @@ fn format_segment_label(segment: &PathSegment) -> String {
         } => format!("- {match_key}: {match_value}"),
         PathSegment::Index(i) => format!("- # index {i}"),
         PathSegment::Unmatched => "-".to_owned(),
+    }
+}
+
+/// Renders a compound value with optional line truncation.
+///
+/// Renders into a temporary buffer, then appends to `output`. If the
+/// rendered output exceeds `max_lines`, only the first `max_lines` lines
+/// are kept and a `# N more lines` marker is appended.
+fn render_value_truncated(
+    output: &mut String,
+    prefix: char,
+    indent: u16,
+    indent_width: u16,
+    value: &Value,
+    max_lines: Option<u32>,
+) {
+    let mut buf = String::new();
+    render_value(&mut buf, prefix, indent, indent_width, value);
+
+    match max_lines {
+        Some(max) => {
+            let lines: Vec<&str> = buf.lines().collect();
+            let total = lines.len() as u32;
+
+            if total <= max {
+                output.push_str(&buf);
+            } else {
+                // Append the first max_lines lines
+                for line in &lines[..max as usize] {
+                    output.push_str(line);
+                    output.push('\n');
+                }
+                // Append the truncation marker with the same prefix
+                let remaining = total - max;
+                push_line(output, prefix, indent, &format!("# {remaining} more lines"));
+            }
+        }
+        None => {
+            output.push_str(&buf);
+        }
     }
 }
 
@@ -552,6 +595,48 @@ mod tests {
                 -items:
                 -  - name: foo
                 -    value: bar
+            "}
+        );
+    }
+
+    #[test]
+    fn missing_subtree_truncated() {
+        // Use a renderer with max 2 lines per side.
+        // Keys are alphabetically ordered (serde_json uses BTreeMap).
+        let config = DiffConfig::default();
+        let actual = json!({"a": 1});
+        let expected = json!({"a": 1, "b": {"p": 1, "q": 2, "r": 3, "s": 4}});
+        let tree = diff(&actual, &expected, &config);
+        let output = YamlRenderer::new()
+            .with_max_lines_per_side(Some(2))
+            .render(&tree);
+        assert_eq!(
+            output,
+            indoc! {"
+                -b:
+                -  p: 1
+                -  q: 2
+                -  # 2 more lines
+            "}
+        );
+    }
+
+    #[test]
+    fn truncation_disabled_renders_all_lines() {
+        let config = DiffConfig::default();
+        let actual = json!({"a": 1});
+        let expected = json!({"a": 1, "b": {"x": 1, "y": 2, "z": 3}});
+        let tree = diff(&actual, &expected, &config);
+        let output = YamlRenderer::new()
+            .with_max_lines_per_side(None)
+            .render(&tree);
+        assert_eq!(
+            output,
+            indoc! {"
+                -b:
+                -  x: 1
+                -  y: 2
+                -  z: 3
             "}
         );
     }
