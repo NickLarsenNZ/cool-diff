@@ -1,9 +1,11 @@
+/// YAML-style diff renderer.
 pub mod yaml;
 
 use crate::model::DiffTree;
 
 /// Renders a `DiffTree` into a human-readable string.
 pub trait DiffRenderer {
+    /// Renders the diff tree as a string.
     fn render(&self, tree: &DiffTree) -> String;
 }
 

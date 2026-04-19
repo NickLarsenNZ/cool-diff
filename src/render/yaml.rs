@@ -26,6 +26,7 @@ impl YamlRenderer {
     /// Default number of spaces per indentation level.
     pub const DEFAULT_INDENT_WIDTH: u16 = 2;
 
+    /// Creates a new renderer with default settings.
     pub fn new() -> Self {
         Self {
             max_lines_per_side: Some(Self::DEFAULT_MAX_LINES_PER_SIDE),
