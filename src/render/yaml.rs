@@ -150,9 +150,48 @@ fn render_leaf(segment: &PathSegment, kind: &DiffKind, indent: u16, output: &mut
             }
         }
 
-        DiffKind::TypeMismatch { .. } => {
-            // TODO: type mismatch rendering
-            unimplemented!("type mismatch rendering");
+        DiffKind::TypeMismatch {
+            actual,
+            actual_type,
+            expected,
+            expected_type,
+        } => {
+            let label = format_segment_label(segment);
+            let comment = format!("# expected: {expected_type}, actual: {actual_type}");
+
+            if is_scalar(expected) {
+                push_line(
+                    output,
+                    indicator::EXPECTED,
+                    indent,
+                    &format!("{label}: {val} {comment}", val = format_scalar(expected)),
+                );
+            } else {
+                // TODO: compound type mismatch rendering
+                push_line(
+                    output,
+                    indicator::EXPECTED,
+                    indent,
+                    &format!("{label}: ... {comment}"),
+                );
+            }
+
+            if is_scalar(actual) {
+                push_line(
+                    output,
+                    indicator::ACTUAL,
+                    indent,
+                    &format!("{label}: {val} {comment}", val = format_scalar(actual)),
+                );
+            } else {
+                // TODO: compound type mismatch rendering
+                push_line(
+                    output,
+                    indicator::ACTUAL,
+                    indent,
+                    &format!("{label}: ... {comment}"),
+                );
+            }
         }
     }
 }
@@ -292,7 +331,7 @@ mod tests {
         assert_eq!(
             output,
             indoc! {"
-                a:
+                 a:
                 -  b: expected
                 +  b: actual
             "}
@@ -314,6 +353,33 @@ mod tests {
     fn equal_values_render_empty() {
         let output = render(&json!({"a": 1}), &json!({"a": 1}));
         assert_eq!(output, "");
+    }
+
+    #[test]
+    #[allow(clippy::approx_constant)]
+    fn type_mismatch_scalar() {
+        // actual has number 42, expected has string "42".
+        // "42" is quoted because it looks like a number in YAML.
+        let output = render(&json!({"a": 42}), &json!({"a": "42"}));
+        assert_eq!(
+            output,
+            indoc! {r#"
+                -a: "42" # expected: string, actual: number
+                +a: 42 # expected: string, actual: number
+            "#}
+        );
+    }
+
+    #[test]
+    fn type_mismatch_null_vs_object() {
+        let output = render(&json!({"a": null}), &json!({"a": {"b": 1}}));
+        assert_eq!(
+            output,
+            indoc! {"
+                -a: ... # expected: object, actual: null
+                +a: null # expected: object, actual: null
+            "}
+        );
     }
 
     #[test]
