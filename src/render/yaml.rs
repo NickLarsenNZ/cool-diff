@@ -56,6 +56,7 @@ impl YamlRenderer {
                 // Render the segment as a context line.
                 // Key segments need a trailing colon (e.g. `spec:`), but
                 // array segments already include their content (e.g. `- name: FOO`).
+                // Index segments include the index as a comment (e.g. `- # index 0`).
                 let label = format_segment_label(segment);
                 let suffix = if matches!(segment, PathSegment::Key(_)) { ":" } else { "" };
                 push_line(output, indicator::UNCHANGED, indent, &format!("{label}{suffix}"));
@@ -123,22 +124,48 @@ fn render_leaf(
         // Changed values are always scalars (compound types produce
         // Container nodes, not Leaf nodes). Safe to call format_scalar.
         DiffKind::Changed { actual, expected } => {
-            let label = format_segment_label(segment);
-            push_line(
-                output,
-                indicator::EXPECTED,
-                indent,
-                &format!("{label}: {val}", val = format_scalar(expected)),
-            );
-            push_line(
-                output,
-                indicator::ACTUAL,
-                indent,
-                &format!("{label}: {val}", val = format_scalar(actual)),
-            );
+            // Emit an index comment for position-matched array elements
+            if let Some(comment) = index_comment(segment) {
+                push_line(output, indicator::UNCHANGED, indent, &comment);
+            }
+
+            if segment.is_array() {
+                // Array element. Render as a YAML list item.
+                push_line(
+                    output,
+                    indicator::EXPECTED,
+                    indent,
+                    &format!("- {val}", val = format_scalar(expected)),
+                );
+                push_line(
+                    output,
+                    indicator::ACTUAL,
+                    indent,
+                    &format!("- {val}", val = format_scalar(actual)),
+                );
+            } else {
+                let label = format_segment_label(segment);
+                push_line(
+                    output,
+                    indicator::EXPECTED,
+                    indent,
+                    &format!("{label}: {val}", val = format_scalar(expected)),
+                );
+                push_line(
+                    output,
+                    indicator::ACTUAL,
+                    indent,
+                    &format!("{label}: {val}", val = format_scalar(actual)),
+                );
+            }
         }
 
         DiffKind::Missing { expected } => {
+            // Emit an index comment for position-matched array elements
+            if let Some(comment) = index_comment(segment) {
+                push_line(output, indicator::UNCHANGED, indent, &comment);
+            }
+
             if segment.is_array() {
                 // Missing array element. Render as a YAML list item.
                 render_missing_array_element(
@@ -234,6 +261,16 @@ fn render_leaf(
                 );
             }
         }
+    }
+}
+
+/// Returns a trailing comment for Index segments (e.g. `# index 1`).
+///
+/// Returns `None` for non-Index segments.
+fn index_comment(segment: &PathSegment) -> Option<String> {
+    match segment {
+        PathSegment::Index(i) => Some(format!("# index {i}")),
+        _ => None,
     }
 }
 
