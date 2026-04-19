@@ -75,7 +75,7 @@ impl YamlRenderer {
             }
 
             DiffNode::Leaf { segment, kind } => {
-                render_leaf(segment, kind, indent, output);
+                render_leaf(self, segment, kind, indent, output);
             }
         }
     }
@@ -109,7 +109,13 @@ fn render_child(renderer: &YamlRenderer, node: &DiffNode, parent_indent: u16, ou
 }
 
 /// Renders a leaf node (a single difference).
-fn render_leaf(segment: &PathSegment, kind: &DiffKind, indent: u16, output: &mut String) {
+fn render_leaf(
+    renderer: &YamlRenderer,
+    segment: &PathSegment,
+    kind: &DiffKind,
+    indent: u16,
+    output: &mut String,
+) {
     match kind {
         // Changed values are always scalars (compound types produce
         // Container nodes, not Leaf nodes). Safe to call format_scalar.
@@ -140,12 +146,15 @@ fn render_leaf(segment: &PathSegment, kind: &DiffKind, indent: u16, output: &mut
                     &format!("{label}: {val}", val = format_scalar(expected)),
                 );
             } else {
-                // TODO: missing subtree rendering
-                push_line(
+                // Compound missing value. Render the key, then the full
+                // expected value as `-` prefixed YAML lines.
+                push_line(output, indicator::EXPECTED, indent, &format!("{label}:"));
+                render_value(
                     output,
                     indicator::EXPECTED,
-                    indent,
-                    &format!("{label}: ..."),
+                    indent + renderer.indent_width,
+                    renderer.indent_width,
+                    expected,
                 );
             }
         }
@@ -157,37 +166,55 @@ fn render_leaf(segment: &PathSegment, kind: &DiffKind, indent: u16, output: &mut
             expected_type,
         } => {
             let label = format_segment_label(segment);
-            let expected_val = if is_scalar(expected) {
-                format_scalar(expected)
+
+            // Build the content portion of each header line (before the comment)
+            let expected_header = if is_scalar(expected) {
+                format!("{label}: {val}", val = format_scalar(expected))
             } else {
-                // TODO: compound type mismatch rendering
-                "...".to_owned()
+                format!("{label}:")
             };
-            let actual_val = if is_scalar(actual) {
-                format_scalar(actual)
+            let actual_header = if is_scalar(actual) {
+                format!("{label}: {val}", val = format_scalar(actual))
             } else {
-                // TODO: compound type mismatch rendering
-                "...".to_owned()
+                format!("{label}:")
             };
 
-            let expected_content = format!("{label}: {expected_val}");
-            let actual_content = format!("{label}: {actual_val}");
+            // Pad the shorter header so the type comments align
+            let max_len = expected_header.len().max(actual_header.len());
 
-            // Pad the shorter line so the comments align
-            let max_len = expected_content.len().max(actual_content.len());
-
+            // Render expected side
             push_line(
                 output,
                 indicator::EXPECTED,
                 indent,
-                &format!("{expected_content:<width$} # expected: {expected_type}", width = max_len),
+                &format!("{expected_header:<width$} # expected: {expected_type}", width = max_len),
             );
+            if !is_scalar(expected) {
+                render_value(
+                    output,
+                    indicator::EXPECTED,
+                    indent + renderer.indent_width,
+                    renderer.indent_width,
+                    expected,
+                );
+            }
+
+            // Render actual side
             push_line(
                 output,
                 indicator::ACTUAL,
                 indent,
-                &format!("{actual_content:<width$} # actual: {actual_type}", width = max_len),
+                &format!("{actual_header:<width$} # actual: {actual_type}", width = max_len),
             );
+            if !is_scalar(actual) {
+                render_value(
+                    output,
+                    indicator::ACTUAL,
+                    indent + renderer.indent_width,
+                    renderer.indent_width,
+                    actual,
+                );
+            }
         }
     }
 }
@@ -214,6 +241,122 @@ fn format_segment_label(segment: &PathSegment) -> String {
         } => format!("- {match_key}: {match_value}"),
         PathSegment::Index(i) => format!("- # index {i}"),
         PathSegment::Unmatched => "-".to_owned(),
+    }
+}
+
+/// Recursively renders a JSON value as YAML lines with the given prefix.
+///
+/// Used for rendering compound values in Missing and TypeMismatch diffs.
+/// Each line is prefixed with the indicator character (e.g. `-` for expected).
+fn render_value(
+    output: &mut String,
+    prefix: char,
+    indent: u16,
+    indent_width: u16,
+    value: &Value,
+) {
+    match value {
+        // Scalars render as a single value (caller handles the key)
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
+            push_line(output, prefix, indent, &format_scalar(value));
+        }
+
+        Value::Object(map) => {
+            for (key, val) in map {
+                if is_scalar(val) {
+                    push_line(
+                        output,
+                        prefix,
+                        indent,
+                        &format!("{key}: {v}", v = format_scalar(val)),
+                    );
+                } else {
+                    push_line(output, prefix, indent, &format!("{key}:"));
+                    render_value(output, prefix, indent + indent_width, indent_width, val);
+                }
+            }
+        }
+
+        Value::Array(arr) => {
+            for elem in arr {
+                if is_scalar(elem) {
+                    push_line(
+                        output,
+                        prefix,
+                        indent,
+                        &format!("- {v}", v = format_scalar(elem)),
+                    );
+                } else {
+                    // Render first key on the same line as `- `, rest indented
+                    render_array_element(output, prefix, indent, indent_width, elem);
+                }
+            }
+        }
+    }
+}
+
+/// Renders a compound array element, placing the first object key on the
+/// same line as the `- ` marker for natural YAML formatting.
+fn render_array_element(
+    output: &mut String,
+    prefix: char,
+    indent: u16,
+    indent_width: u16,
+    value: &Value,
+) {
+    match value {
+        Value::Object(map) => {
+            let mut first = true;
+            for (key, val) in map {
+                if first {
+                    // First key goes on the `- ` line
+                    if is_scalar(val) {
+                        push_line(
+                            output,
+                            prefix,
+                            indent,
+                            &format!("- {key}: {v}", v = format_scalar(val)),
+                        );
+                    } else {
+                        push_line(output, prefix, indent, &format!("- {key}:"));
+                        render_value(
+                            output,
+                            prefix,
+                            indent + indent_width,
+                            indent_width,
+                            val,
+                        );
+                    }
+                    first = false;
+                } else {
+                    // Subsequent keys are indented past the `- `
+                    let sub_indent = indent + indent_width;
+                    if is_scalar(val) {
+                        push_line(
+                            output,
+                            prefix,
+                            sub_indent,
+                            &format!("{key}: {v}", v = format_scalar(val)),
+                        );
+                    } else {
+                        push_line(output, prefix, sub_indent, &format!("{key}:"));
+                        render_value(
+                            output,
+                            prefix,
+                            sub_indent + indent_width,
+                            indent_width,
+                            val,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Non-object array elements (nested arrays)
+        _ => {
+            push_line(output, prefix, indent, "-");
+            render_value(output, prefix, indent + indent_width, indent_width, value);
+        }
     }
 }
 
@@ -373,8 +516,58 @@ mod tests {
         assert_eq!(
             output,
             indoc! {"
-                -a: ...  # expected: object
+                -a:      # expected: object
+                -  b: 1
                 +a: null # actual: null
+            "}
+        );
+    }
+
+    #[test]
+    fn missing_object_subtree() {
+        let output = render(
+            &json!({"a": 1}),
+            &json!({"a": 1, "b": {"x": 1, "y": 2}}),
+        );
+        assert_eq!(
+            output,
+            indoc! {"
+                -b:
+                -  x: 1
+                -  y: 2
+            "}
+        );
+    }
+
+    #[test]
+    fn missing_array_subtree() {
+        let output = render(
+            &json!({"a": 1}),
+            &json!({"a": 1, "items": [1, 2, 3]}),
+        );
+        assert_eq!(
+            output,
+            indoc! {"
+                -items:
+                -  - 1
+                -  - 2
+                -  - 3
+            "}
+        );
+    }
+
+    #[test]
+    fn missing_nested_object_in_array() {
+        let output = render(
+            &json!({"a": 1}),
+            &json!({"a": 1, "items": [{"name": "foo", "value": "bar"}]}),
+        );
+        assert_eq!(
+            output,
+            indoc! {"
+                -items:
+                -  - name: foo
+                -    value: bar
             "}
         );
     }
