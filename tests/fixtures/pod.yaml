@@ -45,6 +45,6 @@ spec:
     - name: main
       env:
         - name: FOO
-          value: BAR
+          value: BAR # actual has BAZ
     - name: sidecar
       image: nginx:1.25

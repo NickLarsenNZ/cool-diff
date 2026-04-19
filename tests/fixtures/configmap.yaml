@@ -25,5 +25,5 @@ data:
   database.host: postgres.data.svc
   database.port: "5432"
   cache.enabled: "true"
-  cache.ttl: "600"
-  log.level: debug
+  cache.ttl: "600" # actual has "300"
+  log.level: debug # actual has info

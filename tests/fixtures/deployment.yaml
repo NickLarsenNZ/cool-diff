@@ -46,12 +46,12 @@ kind: Deployment
 metadata:
   name: web-app
 spec:
-  replicas: 5
+  replicas: 5 # actual has 3
   template:
     spec:
       containers:
         - name: web
-          image: myapp:v2.2.0
+          image: myapp:v2.2.0 # actual has v2.1.0
           resources:
             limits:
-              memory: 1Gi
+              memory: 1Gi # actual has 512Mi
