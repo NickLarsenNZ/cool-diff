@@ -367,7 +367,7 @@ fn diff_arrays_by_contains(
     actual_arr: &[Value],
     expected_arr: &[Value],
     ambiguous_strategy: &AmbiguousMatchStrategy,
-    config: &DiffConfig,
+    _config: &DiffConfig,
     path: &str,
 ) -> DiffResult {
     let mut children = Vec::new();
