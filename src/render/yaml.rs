@@ -139,27 +139,39 @@ fn render_leaf(
         }
 
         DiffKind::Missing { expected } => {
-            let label = format_segment_label(segment);
-            if is_scalar(expected) {
-                // Scalar missing value, safe to call format_scalar
-                push_line(
+            if segment.is_array() {
+                // Missing array element. Render as a YAML list item.
+                render_missing_array_element(
                     output,
                     indicator::EXPECTED,
                     indent,
-                    &format!("{label}: {val}", val = format_scalar(expected)),
-                );
-            } else {
-                // Compound missing value. Render the key, then the full
-                // expected value as `-` prefixed YAML lines.
-                push_line(output, indicator::EXPECTED, indent, &format!("{label}:"));
-                render_value_truncated(
-                    output,
-                    indicator::EXPECTED,
-                    indent + renderer.indent_width,
                     renderer.indent_width,
                     expected,
                     renderer.max_lines_per_side,
                 );
+            } else {
+                let label = format_segment_label(segment);
+                if is_scalar(expected) {
+                    // Scalar missing value, safe to call format_scalar
+                    push_line(
+                        output,
+                        indicator::EXPECTED,
+                        indent,
+                        &format!("{label}: {val}", val = format_scalar(expected)),
+                    );
+                } else {
+                    // Compound missing value. Render the key, then the full
+                    // expected value as `-` prefixed YAML lines.
+                    push_line(output, indicator::EXPECTED, indent, &format!("{label}:"));
+                    render_value_truncated(
+                        output,
+                        indicator::EXPECTED,
+                        indent + renderer.indent_width,
+                        renderer.indent_width,
+                        expected,
+                        renderer.max_lines_per_side,
+                    );
+                }
             }
         }
 
@@ -220,6 +232,55 @@ fn render_leaf(
                     actual,
                     renderer.max_lines_per_side,
                 );
+            }
+        }
+    }
+}
+
+/// Renders a missing array element as a YAML list item.
+///
+/// Scalars render as `- value`. Objects render with the first key on
+/// the same line as `- `. Applies truncation for compound values.
+fn render_missing_array_element(
+    output: &mut String,
+    prefix: char,
+    indent: u16,
+    indent_width: u16,
+    value: &Value,
+    max_lines: Option<u32>,
+) {
+    if is_scalar(value) {
+        push_line(
+            output,
+            prefix,
+            indent,
+            &format!("- {val}", val = format_scalar(value)),
+        );
+    } else {
+        let mut buf = String::new();
+        render_array_element(&mut buf, prefix, indent, indent_width, value);
+        match max_lines {
+            Some(max) => {
+                let lines: Vec<&str> = buf.lines().collect();
+                let total = lines.len() as u32;
+                if total <= max {
+                    output.push_str(&buf);
+                } else {
+                    for line in &lines[..max as usize] {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                    let remaining = total - max;
+                    push_line(
+                        output,
+                        prefix,
+                        indent + indent_width,
+                        &format!("# {remaining} more lines"),
+                    );
+                }
+            }
+            None => {
+                output.push_str(&buf);
             }
         }
     }

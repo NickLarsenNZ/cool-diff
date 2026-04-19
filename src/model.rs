@@ -112,6 +112,16 @@ pub enum DiffKind {
     },
 }
 
+impl PathSegment {
+    /// Returns true if this segment represents an array element.
+    pub fn is_array(&self) -> bool {
+        matches!(
+            self,
+            PathSegment::NamedElement { .. } | PathSegment::Index(_) | PathSegment::Unmatched
+        )
+    }
+}
+
 /// A segment in the path to a diff location.
 pub enum PathSegment {
     /// An object key (e.g. `spec` in `spec.containers`).
