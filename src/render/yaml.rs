@@ -157,41 +157,37 @@ fn render_leaf(segment: &PathSegment, kind: &DiffKind, indent: u16, output: &mut
             expected_type,
         } => {
             let label = format_segment_label(segment);
-            let comment = format!("# expected: {expected_type}, actual: {actual_type}");
-
-            if is_scalar(expected) {
-                push_line(
-                    output,
-                    indicator::EXPECTED,
-                    indent,
-                    &format!("{label}: {val} {comment}", val = format_scalar(expected)),
-                );
+            let expected_val = if is_scalar(expected) {
+                format_scalar(expected)
             } else {
                 // TODO: compound type mismatch rendering
-                push_line(
-                    output,
-                    indicator::EXPECTED,
-                    indent,
-                    &format!("{label}: ... {comment}"),
-                );
-            }
-
-            if is_scalar(actual) {
-                push_line(
-                    output,
-                    indicator::ACTUAL,
-                    indent,
-                    &format!("{label}: {val} {comment}", val = format_scalar(actual)),
-                );
+                "...".to_owned()
+            };
+            let actual_val = if is_scalar(actual) {
+                format_scalar(actual)
             } else {
                 // TODO: compound type mismatch rendering
-                push_line(
-                    output,
-                    indicator::ACTUAL,
-                    indent,
-                    &format!("{label}: ... {comment}"),
-                );
-            }
+                "...".to_owned()
+            };
+
+            let expected_content = format!("{label}: {expected_val}");
+            let actual_content = format!("{label}: {actual_val}");
+
+            // Pad the shorter line so the comments align
+            let max_len = expected_content.len().max(actual_content.len());
+
+            push_line(
+                output,
+                indicator::EXPECTED,
+                indent,
+                &format!("{expected_content:<width$} # expected: {expected_type}", width = max_len),
+            );
+            push_line(
+                output,
+                indicator::ACTUAL,
+                indent,
+                &format!("{actual_content:<width$} # actual: {actual_type}", width = max_len),
+            );
         }
     }
 }
@@ -360,12 +356,13 @@ mod tests {
     fn type_mismatch_scalar() {
         // actual has number 42, expected has string "42".
         // "42" is quoted because it looks like a number in YAML.
+        // Comments are aligned by padding the shorter line.
         let output = render(&json!({"a": 42}), &json!({"a": "42"}));
         assert_eq!(
             output,
             indoc! {r#"
-                -a: "42" # expected: string, actual: number
-                +a: 42 # expected: string, actual: number
+                -a: "42" # expected: string
+                +a: 42   # actual: number
             "#}
         );
     }
@@ -376,8 +373,8 @@ mod tests {
         assert_eq!(
             output,
             indoc! {"
-                -a: ... # expected: object, actual: null
-                +a: null # expected: object, actual: null
+                -a: ...  # expected: object
+                +a: null # actual: null
             "}
         );
     }
