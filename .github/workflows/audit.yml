@@ -1,0 +1,24 @@
+name: Security Audit (Scheduled)
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  # Allow manual triggers
+  workflow_dispatch:
+
+# Drop all permissions globally, then grant per-job as needed
+permissions: {}
+
+jobs:
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      issues: write # create issues for new advisories
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
