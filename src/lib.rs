@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used)]
+
 pub mod config;
 pub mod diff;
 pub mod model;
