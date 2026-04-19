@@ -565,6 +565,18 @@ fn push_diff_result(children: &mut Vec<DiffNode>, segment: PathSegment, result: 
     }
 }
 
+/// Returns a human-readable type name for a JSON value.
+fn value_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1150,17 +1162,5 @@ mod tests {
             panic!("expected an error");
         };
         assert!(matches!(err, Error::AmbiguousMatch { count: 2, .. }));
-    }
-}
-
-/// Returns a human-readable type name for a JSON value.
-fn value_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "bool",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
     }
 }
