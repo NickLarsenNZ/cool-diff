@@ -101,8 +101,10 @@ pub enum ArrayMatchMode {
 
 /// Controls behavior when multiple actual array elements could match a single
 /// expected element.
+#[derive(Default)]
 pub enum AmbiguousMatchStrategy {
     /// Fail if more than one candidate exists.
+    #[default]
     Strict,
 
     /// Pick the candidate with the fewest diffs, with a warning comment.
@@ -112,8 +114,3 @@ pub enum AmbiguousMatchStrategy {
     Silent,
 }
 
-impl Default for AmbiguousMatchStrategy {
-    fn default() -> Self {
-        Self::Strict
-    }
-}
