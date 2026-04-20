@@ -23,7 +23,7 @@ Designed for comparing Kubernetes resources, API responses, config files, or any
 - [x] YAML-style renderer with unified diff output (`-`/`+` indicators)
   - [x] Truncation for large subtrees (`# N more lines`)
   - [x] Omitted field/item markers (`# N fields omitted`)
-  - [ ] ANSI colour output for terminal rendering
+  - [x] ANSI colour output for terminal rendering (behind `color` feature gate)
 - [ ] JSON renderer
 - [ ] Pre-configured `MatchConfig` for common Kubernetes resource types
 - [ ] Inline comparison directives in the expected value
