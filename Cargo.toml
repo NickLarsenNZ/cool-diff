@@ -8,6 +8,7 @@ categories = ["development-tools::testing", "data-structures"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 edition = "2024"
+rust-version = "1.85"
 
 [features]
 color = ["dep:owo-colors", "dep:supports-color"]
