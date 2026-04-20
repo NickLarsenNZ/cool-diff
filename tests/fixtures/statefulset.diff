@@ -5,6 +5,6 @@
      spec:
        containers:
          - name: postgres
-           # 2 items omitted
+           # 2 fields omitted
 -          image: "postgres:16.3"
 +          image: "postgres:16.2"

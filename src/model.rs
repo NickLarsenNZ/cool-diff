@@ -13,6 +13,18 @@ impl DiffTree {
     }
 }
 
+/// Describes what kind of children a container holds.
+///
+/// Used to select the correct unit word for omitted count markers
+/// (e.g. "fields" vs "items").
+pub enum ChildKind {
+    /// Children are object fields (key-value pairs).
+    Fields,
+
+    /// Children are array items.
+    Items,
+}
+
 impl DiffNode {
     /// Creates a leaf node representing a single difference.
     pub fn leaf(segment: PathSegment, kind: DiffKind) -> Self {
@@ -20,9 +32,15 @@ impl DiffNode {
     }
 
     /// Creates a container node with child diffs.
-    pub fn container(segment: PathSegment, omitted_count: u16, children: Vec<DiffNode>) -> Self {
+    pub fn container(
+        segment: PathSegment,
+        child_kind: ChildKind,
+        omitted_count: u16,
+        children: Vec<DiffNode>,
+    ) -> Self {
         Self::Container {
             segment,
+            child_kind,
             omitted_count,
             children,
         }
@@ -35,6 +53,9 @@ pub enum DiffNode {
     Container {
         /// The path segment for this container.
         segment: PathSegment,
+
+        /// Whether the children are object fields or array items.
+        child_kind: ChildKind,
 
         /// Number of siblings/elements in the actual data not shown in the diff.
         omitted_count: u16,

@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
+use crate::model::{ChildKind, DiffKind, DiffNode, DiffTree, PathSegment};
 use crate::render::{DiffRenderer, indicator};
 
 /// Controls whether the renderer emits ANSI colour codes.
@@ -81,6 +81,7 @@ impl YamlRenderer {
         match node {
             DiffNode::Container {
                 segment,
+                child_kind,
                 omitted_count,
                 children,
             } => {
@@ -104,7 +105,7 @@ impl YamlRenderer {
                 let child_indent = indent + self.indent_width;
 
                 if *omitted_count > 0 {
-                    let unit = omitted_unit(segment, *omitted_count);
+                    let unit = omitted_unit(child_kind, *omitted_count);
                     push_line(
                         output,
                         indicator::CONTEXT,
@@ -419,12 +420,12 @@ fn render_missing_array_element(
 /// type and count.
 ///
 /// Object keys use "field"/"fields", array segments use "item"/"items".
-fn omitted_unit(segment: &PathSegment, count: u16) -> &'static str {
-    match (segment, count) {
-        (PathSegment::Key(_), 1) => "field",
-        (PathSegment::Key(_), _) => "fields",
-        (_, 1) => "item",
-        (_, _) => "items",
+fn omitted_unit(child_kind: &ChildKind, count: u16) -> &'static str {
+    match (child_kind, count) {
+        (ChildKind::Fields, 1) => "field",
+        (ChildKind::Fields, _) => "fields",
+        (ChildKind::Items, 1) => "item",
+        (ChildKind::Items, _) => "items",
     }
 }
 

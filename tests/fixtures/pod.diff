@@ -2,9 +2,9 @@
    # 1 field omitted
    containers:
      - name: main
-       # 3 items omitted
+       # 3 fields omitted
        env:
-         # 1 field omitted
+         # 1 item omitted
          - name: FOO
 -          value: BAR
 +          value: BAZ

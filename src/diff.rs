@@ -2,7 +2,7 @@ use serde_json::Value;
 use snafu::Snafu;
 
 use crate::config::{AmbiguousMatchStrategy, ArrayMatchMode, DiffConfig};
-use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
+use crate::model::{ChildKind, DiffKind, DiffNode, DiffTree, PathSegment};
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -73,6 +73,7 @@ enum DiffResult {
     /// Child diff nodes from comparing container contents (objects or arrays).
     /// The caller wraps this in a `DiffNode::Container` with the appropriate segment.
     Children {
+        child_kind: ChildKind,
         nodes: Vec<DiffNode>,
         omitted_count: u16,
     },
@@ -175,10 +176,16 @@ fn diff_objects(
 
                     // Nested differences in a child object or array
                     DiffResult::Children {
+                        child_kind,
                         nodes,
                         omitted_count,
                     } => {
-                        children.push(DiffNode::container(segment, omitted_count, nodes));
+                        children.push(DiffNode::container(
+                            segment,
+                            child_kind,
+                            omitted_count,
+                            nodes,
+                        ));
                     }
                 }
             }
@@ -194,6 +201,7 @@ fn diff_objects(
     // expected key. The renderer uses this for "# N fields omitted" markers.
     let omitted_count = actual_map.len().saturating_sub(expected_map.len()) as u16;
     Ok(DiffResult::Children {
+        child_kind: ChildKind::Fields,
         nodes: children,
         omitted_count,
     })
@@ -270,10 +278,16 @@ fn diff_arrays_by_index(
 
                     // Nested differences in a child object or array
                     DiffResult::Children {
+                        child_kind,
                         nodes,
                         omitted_count,
                     } => {
-                        children.push(DiffNode::container(segment, omitted_count, nodes));
+                        children.push(DiffNode::container(
+                            segment,
+                            child_kind,
+                            omitted_count,
+                            nodes,
+                        ));
                     }
                 }
             }
@@ -289,6 +303,7 @@ fn diff_arrays_by_index(
     // The renderer uses this for "# N items omitted" markers.
     let omitted_count = actual_arr.len().saturating_sub(expected_arr.len()) as u16;
     Ok(DiffResult::Children {
+        child_kind: ChildKind::Items,
         nodes: children,
         omitted_count,
     })
@@ -356,10 +371,16 @@ fn diff_arrays_by_key(
 
                     // Nested differences in a child object or array
                     DiffResult::Children {
+                        child_kind,
                         nodes,
                         omitted_count,
                     } => {
-                        children.push(DiffNode::container(segment, omitted_count, nodes));
+                        children.push(DiffNode::container(
+                            segment,
+                            child_kind,
+                            omitted_count,
+                            nodes,
+                        ));
                     }
                 }
             }
@@ -396,6 +417,7 @@ fn diff_arrays_by_key(
     // Elements in actual that were not matched by any expected element
     let omitted_count = (actual_arr.len() as u16).saturating_sub(matched_count);
     Ok(DiffResult::Children {
+        child_kind: ChildKind::Items,
         nodes: children,
         omitted_count,
     })
@@ -466,6 +488,7 @@ fn diff_arrays_by_contains(
     // Elements in actual that were not matched by any expected element
     let omitted_count = (actual_arr.len() as u16).saturating_sub(matched_count);
     Ok(DiffResult::Children {
+        child_kind: ChildKind::Items,
         nodes: children,
         omitted_count,
     })
@@ -557,10 +580,11 @@ fn push_diff_result(children: &mut Vec<DiffNode>, segment: PathSegment, result: 
 
         // Nested differences in a child object or array
         DiffResult::Children {
+            child_kind,
             nodes,
             omitted_count,
         } => {
-            children.push(DiffNode::container(segment, omitted_count, nodes));
+            children.push(DiffNode::container(segment, child_kind, omitted_count, nodes));
         }
     }
 }
@@ -727,6 +751,7 @@ mod tests {
             segment,
             children,
             omitted_count,
+            ..
         } = &tree.roots[0]
         else {
             panic!("expected Container");
@@ -809,6 +834,7 @@ mod tests {
             segment,
             children,
             omitted_count,
+            ..
         } = &tree.roots[0]
         else {
             panic!("expected Container for items key");

@@ -8,7 +8,7 @@
        # 1 field omitted
        containers:
          - name: web
-           # 2 items omitted
+           # 2 fields omitted
 -          image: "myapp:v2.2.0"
 +          image: "myapp:v2.1.0"
            resources:
