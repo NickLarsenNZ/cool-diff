@@ -1,0 +1,6 @@
+[workspace]
+changelog_update = true
+git_release_enable = true
+semver_check = true
+# Disable crates.io publishing until the repo is public and CARGO_REGISTRY_TOKEN is set
+publish = false
