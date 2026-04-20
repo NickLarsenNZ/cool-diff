@@ -43,7 +43,7 @@ Designed for comparing Kubernetes resources, API responses, config files, or any
    # 2 fields omitted
    containers:
      - name: app
-       # 2 items omitted
+       # 2 fields omitted
        env:
          - name: LOG_LEVEL
 -          value: debug
