@@ -152,6 +152,13 @@ Run any example with:
 cargo run --example barebones
 ```
 
+> [!TIP]
+> Add `--features color` for coloured output:
+>
+> ```sh
+> cargo run --example barebones --features color
+> ```
+
 ## License
 
 Licensed under either of
