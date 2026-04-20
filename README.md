@@ -9,6 +9,8 @@
 </p>
 
 <p align="center">
+  <a href="https://crates.io/crates/cool-diff"><img src="https://img.shields.io/crates/v/cool-diff" alt="crates.io"></a>
+  <a href="https://docs.rs/cool-diff"><img src="https://img.shields.io/docsrs/cool-diff" alt="docs.rs"></a>
   <a href="https://github.com/NickLarsenNZ/cool-diff/actions/workflows/ci.yml"><img src="https://github.com/NickLarsenNZ/cool-diff/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue" alt="License: MIT/Apache-2.0"></a>
   <a href="Cargo.toml"><img src="https://img.shields.io/badge/MSRV-1.85-orange" alt="MSRV: 1.85"></a>
