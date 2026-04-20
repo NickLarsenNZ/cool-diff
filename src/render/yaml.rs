@@ -74,7 +74,7 @@ impl YamlRenderer {
                 let child_indent = indent + self.indent_width;
 
                 if *omitted_count > 0 {
-                    let unit = omitted_unit(segment);
+                    let unit = omitted_unit(segment, *omitted_count);
                     push_line(
                         output,
                         indicator::CONTEXT,
@@ -339,15 +339,16 @@ fn render_missing_array_element(
     }
 }
 
-/// Returns the appropriate unit word for omitted count based on the segment type.
+/// Returns the appropriate unit word for omitted count based on the segment
+/// type and count.
 ///
-/// Object keys use "fields", array segments use "items".
-fn omitted_unit(segment: &PathSegment) -> &'static str {
-    match segment {
-        PathSegment::Key(_) => "fields",
-        PathSegment::NamedElement { .. } | PathSegment::Index(_) | PathSegment::Unmatched => {
-            "items"
-        }
+/// Object keys use "field"/"fields", array segments use "item"/"items".
+fn omitted_unit(segment: &PathSegment, count: u16) -> &'static str {
+    match (segment, count) {
+        (PathSegment::Key(_), 1) => "field",
+        (PathSegment::Key(_), _) => "fields",
+        (_, 1) => "item",
+        (_, _) => "items",
     }
 }
 

@@ -1,7 +1,7 @@
  spec:
    # 3 fields omitted
    template:
-     # 1 fields omitted
+     # 1 field omitted
      spec:
        containers:
          - name: postgres

@@ -1,5 +1,5 @@
  data:
-   # 1 fields omitted
+   # 1 field omitted
 -  cache.ttl: "600"
 +  cache.ttl: "300"
 -  log.level: debug
