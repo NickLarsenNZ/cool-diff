@@ -3,6 +3,23 @@ use serde_json::Value;
 use crate::model::{DiffKind, DiffNode, DiffTree, PathSegment};
 use crate::render::{DiffRenderer, indicator};
 
+/// Controls whether the renderer emits ANSI colour codes.
+#[cfg(feature = "color")]
+#[derive(Debug, Clone, Copy, Default)]
+pub enum ColorMode {
+    /// Automatically detect terminal support.
+    ///
+    /// Uses `supports-color` to check if stdout supports ANSI colours.
+    #[default]
+    Auto,
+
+    /// Always emit ANSI colour codes.
+    Always,
+
+    /// Never emit ANSI colour codes.
+    Never,
+}
+
 /// Renders a `DiffTree` as YAML-like diff output.
 ///
 /// Output uses unified diff conventions:
@@ -17,6 +34,10 @@ pub struct YamlRenderer {
 
     /// Number of spaces per indentation level.
     indent_width: u16,
+
+    /// Controls ANSI colour output.
+    #[cfg(feature = "color")]
+    color_mode: ColorMode,
 }
 
 impl YamlRenderer {
@@ -31,6 +52,8 @@ impl YamlRenderer {
         Self {
             max_lines_per_side: Some(Self::DEFAULT_MAX_LINES_PER_SIDE),
             indent_width: Self::DEFAULT_INDENT_WIDTH,
+            #[cfg(feature = "color")]
+            color_mode: ColorMode::default(),
         }
     }
 
@@ -43,6 +66,13 @@ impl YamlRenderer {
     /// Sets the number of spaces per indentation level.
     pub fn with_indent_width(mut self, width: u16) -> Self {
         self.indent_width = width;
+        self
+    }
+
+    /// Sets the colour mode for ANSI output.
+    #[cfg(feature = "color")]
+    pub fn with_color_mode(mut self, mode: ColorMode) -> Self {
+        self.color_mode = mode;
         self
     }
 
@@ -107,6 +137,52 @@ impl DiffRenderer for YamlRenderer {
         for node in &tree.roots {
             // Root nodes start at indent level 0 (no leading spaces)
             self.render_node(node, 0, &mut output);
+        }
+
+        #[cfg(feature = "color")]
+        if self.should_colorize() {
+            return self.colorize(&output);
+        }
+
+        output
+    }
+}
+
+#[cfg(feature = "color")]
+impl YamlRenderer {
+    /// Returns true if output should be colorized based on the colour mode.
+    fn should_colorize(&self) -> bool {
+        match self.color_mode {
+            ColorMode::Always => true,
+            ColorMode::Never => false,
+            ColorMode::Auto => {
+                supports_color::on(supports_color::Stream::Stdout)
+                    .is_some_and(|level| level.has_basic)
+            }
+        }
+    }
+
+    /// Colorizes each line of the plain output based on its prefix character.
+    fn colorize(&self, plain: &str) -> String {
+        use owo_colors::OwoColorize;
+
+        let mut output = String::with_capacity(plain.len());
+        for line in plain.lines() {
+            let first = line.chars().next();
+            let colored = match first {
+                Some(indicator::EXPECTED) => {
+                    format!("{colored_text}", colored_text = line.red())
+                }
+                Some(indicator::ACTUAL) => {
+                    format!("{colored_text}", colored_text = line.green())
+                }
+                _ if line.trim_start().starts_with('#') => {
+                    format!("{colored_text}", colored_text = line.bright_black())
+                }
+                _ => line.to_owned(),
+            };
+            output.push_str(&colored);
+            output.push('\n');
         }
         output
     }
@@ -513,15 +589,24 @@ fn render_array_element(
     }
 }
 
+/// Builds a line string from prefix, indentation, and content.
+fn build_line(prefix: char, indent: u16, content: &str) -> String {
+    let mut line = String::with_capacity(1 + indent as usize + content.len());
+    line.push(prefix);
+    for _ in 0..indent {
+        line.push(' ');
+    }
+    line.push_str(content);
+    line
+}
+
 /// Pushes a single line to the output with the given prefix and indentation.
 fn push_line(output: &mut String, prefix: char, indent: u16, content: &str) {
-    output.push(prefix);
-    for _ in 0..indent {
-        output.push(' ');
-    }
-    output.push_str(content);
+    let line = build_line(prefix, indent, content);
+    output.push_str(&line);
     output.push('\n');
 }
+
 
 /// Formats a JSON value as a YAML scalar.
 fn format_scalar(value: &Value) -> String {

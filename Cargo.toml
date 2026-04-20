@@ -9,9 +9,14 @@ license = "MIT OR Apache-2.0"
 readme = "README.md"
 edition = "2024"
 
+[features]
+color = ["dep:owo-colors", "dep:supports-color"]
+
 [dependencies]
+owo-colors = { version = "4", optional = true }
 serde_json = "1"
 snafu = "0.9"
+supports-color = { version = "3", optional = true }
 
 [dev-dependencies]
 indoc = "2"
