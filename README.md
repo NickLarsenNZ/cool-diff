@@ -8,6 +8,12 @@
   Compact, context-preserving diffs of structured data.
 </p>
 
+<p align="center">
+  <a href="https://github.com/NickLarsenNZ/cool-diff/actions/workflows/ci.yml"><img src="https://github.com/NickLarsenNZ/cool-diff/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue" alt="License: MIT/Apache-2.0"></a>
+  <a href="Cargo.toml"><img src="https://img.shields.io/badge/MSRV-1.85-orange" alt="MSRV: 1.85"></a>
+</p>
+
 ## What is cool-diff?
 
 `cool-diff` compares two `serde_json::Value` trees and produces a minimal, human-readable diff. It is format-agnostic at the core (operates on parsed JSON values) and ships with a YAML-style renderer out of the box.
