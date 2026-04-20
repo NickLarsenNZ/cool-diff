@@ -159,6 +159,23 @@ cargo run --example barebones
 > cargo run --example barebones --features color
 > ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a list of changes per release.
+
+## Contributing
+
+Contributions are welcome! A contributing guide is coming soon.
+
+> [!IMPORTANT]
+> Unless you explicitly state otherwise, any contribution intentionally
+> submitted for inclusion in this project by you shall be dual licensed
+> under MIT and Apache-2.0, without any additional terms or conditions.
+
+## Releasing
+
+See [RELEASE.md](RELEASE.md) for the release process and commit conventions.
+
 ## License
 
 Licensed under either of
