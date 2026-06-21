@@ -584,7 +584,12 @@ fn push_diff_result(children: &mut Vec<DiffNode>, segment: PathSegment, result: 
             nodes,
             omitted_count,
         } => {
-            children.push(DiffNode::container(segment, child_kind, omitted_count, nodes));
+            children.push(DiffNode::container(
+                segment,
+                child_kind,
+                omitted_count,
+                nodes,
+            ));
         }
     }
 }
