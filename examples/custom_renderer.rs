@@ -63,7 +63,15 @@ fn format_segment(segment: &PathSegment) -> String {
         PathSegment::NamedElement {
             match_key,
             match_value,
-        } => format!("[{match_key}={match_value}]"),
+        } => {
+            // match_value is a serde_json::Value; render scalars plainly so a
+            // string key shows as [name=app] rather than [name="app"].
+            let string_value = match match_value {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            format!("[{match_key}={string_value}]")
+        }
         PathSegment::Index(i) => format!("[{i}]"),
         PathSegment::Unmatched => "[?]".to_owned(),
     }
