@@ -950,6 +950,22 @@ mod tests {
         assert_eq!(*omitted_count, 2);
     }
 
+    #[test]
+    fn numeric_key_field_matches() {
+        // A key field with a non-string scalar value must match by value. Today
+        // the matcher extracts the key with as_str(), so a present numeric key
+        // is misreported as a missing key field. The key (id) is equal on both
+        // sides and a separate, non-key field changes, isolating numeric-key
+        // matching from any composite-key concern.
+        let config = config_with_key_at("items", "id");
+        let actual = json!({"items": [{"id": 7, "label": "old"}]});
+        let expected = json!({"items": [{"id": 7, "label": "new"}]});
+
+        // items -> NamedElement(id=7) -> label: Changed(old -> new)
+        let tree = diff(&actual, &expected, &config).expect("numeric key should match by value");
+        assert!(!tree.is_empty());
+    }
+
     fn config_with_contains_at(path: &str) -> DiffConfig {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
         DiffConfig::new().with_match_config(
