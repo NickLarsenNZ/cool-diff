@@ -329,21 +329,22 @@ fn diff_arrays_by_key(
     // Loop through the expected array items and then check each against the
     // actual array for the element with the matching key.
     for expected_elem in expected_arr {
-        // Extract the key value from the expected element.
+        // Extract the key value from the expected element. Key values are
+        // compared by value, so any scalar (string, number, bool) works.
         // If the expected element doesn't have the key field, that's a
         // configuration error.
-        let expected_key_val = expected_elem
-            .get(key_field)
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::MissingKeyField {
-                path: path.to_owned(),
-                key_field: key_field.to_owned(),
-            })?;
+        let expected_key_val =
+            expected_elem
+                .get(key_field)
+                .ok_or_else(|| Error::MissingKeyField {
+                    path: path.to_owned(),
+                    key_field: key_field.to_owned(),
+                })?;
 
         // Find the matching element in the actual array
         let candidates: Vec<&Value> = actual_arr
             .iter()
-            .filter(|elem| elem.get(key_field).and_then(|v| v.as_str()) == Some(expected_key_val))
+            .filter(|elem| elem.get(key_field) == Some(expected_key_val))
             .collect();
 
         match candidates.len() {
@@ -358,7 +359,7 @@ fn diff_arrays_by_key(
                 matched_count += 1;
                 let segment = PathSegment::NamedElement {
                     match_key: key_field.to_owned(),
-                    match_value: expected_key_val.to_owned(),
+                    match_value: expected_key_val.clone(),
                 };
                 match diff_values(candidates[0], expected_elem, config, path)? {
                     // Values are equal, nothing to record
@@ -398,7 +399,7 @@ fn diff_arrays_by_key(
                     matched_count += 1;
                     let segment = PathSegment::NamedElement {
                         match_key: key_field.to_owned(),
-                        match_value: expected_key_val.to_owned(),
+                        match_value: expected_key_val.clone(),
                     };
                     // Pick the candidate with the fewest diffs
                     let best =
@@ -584,7 +585,12 @@ fn push_diff_result(children: &mut Vec<DiffNode>, segment: PathSegment, result: 
             nodes,
             omitted_count,
         } => {
-            children.push(DiffNode::container(segment, child_kind, omitted_count, nodes));
+            children.push(DiffNode::container(
+                segment,
+                child_kind,
+                omitted_count,
+                nodes,
+            ));
         }
     }
 }
@@ -948,6 +954,22 @@ mod tests {
         };
         // 3 actual elements, 1 matched = 2 omitted
         assert_eq!(*omitted_count, 2);
+    }
+
+    #[test]
+    fn numeric_key_field_matches() {
+        // A key field with a non-string scalar value must match by value. Today
+        // the matcher extracts the key with as_str(), so a present numeric key
+        // is misreported as a missing key field. The key (id) is equal on both
+        // sides and a separate, non-key field changes, isolating numeric-key
+        // matching from any composite-key concern.
+        let config = config_with_key_at("items", "id");
+        let actual = json!({"items": [{"id": 7, "label": "old"}]});
+        let expected = json!({"items": [{"id": 7, "label": "new"}]});
+
+        // items -> NamedElement(id=7) -> label: Changed(old -> new)
+        let tree = diff(&actual, &expected, &config).expect("numeric key should match by value");
+        assert!(!tree.is_empty());
     }
 
     fn config_with_contains_at(path: &str) -> DiffConfig {

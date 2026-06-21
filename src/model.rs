@@ -153,8 +153,11 @@ pub enum PathSegment {
         /// The key used to match (e.g. `name`).
         match_key: String,
 
-        /// The value of the match key (e.g. `FOO`).
-        match_value: String,
+        /// The value of the match key (e.g. `FOO` or `8080`).
+        ///
+        /// Held as a [`Value`] so non-string scalar keys (numbers, bools) are
+        /// preserved. Key values are expected to be scalars.
+        match_value: Value,
     },
 
     /// An array element matched by position.

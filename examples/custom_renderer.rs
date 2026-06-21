@@ -63,7 +63,12 @@ fn format_segment(segment: &PathSegment) -> String {
         PathSegment::NamedElement {
             match_key,
             match_value,
-        } => format!("[{match_key}={match_value}]"),
+        } => {
+            // match_value is a serde_json::Value rendered via its JSON Display,
+            // so the type is preserved: [name="app"] for a string, [id=42] for a
+            // number.
+            format!("[{match_key}={match_value}]")
+        }
         PathSegment::Index(i) => format!("[{i}]"),
         PathSegment::Unmatched => "[?]".to_owned(),
     }

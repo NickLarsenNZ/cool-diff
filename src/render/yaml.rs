@@ -156,10 +156,8 @@ impl YamlRenderer {
         match self.color_mode {
             ColorMode::Always => true,
             ColorMode::Never => false,
-            ColorMode::Auto => {
-                supports_color::on(supports_color::Stream::Stdout)
-                    .is_some_and(|level| level.has_basic)
-            }
+            ColorMode::Auto => supports_color::on(supports_color::Stream::Stdout)
+                .is_some_and(|level| level.has_basic),
         }
     }
 
@@ -436,9 +434,22 @@ fn format_segment_label(segment: &PathSegment) -> String {
         PathSegment::NamedElement {
             match_key,
             match_value,
-        } => format!("- {match_key}: {match_value}"),
+        } => format!("- {match_key}: {val}", val = format_match_value(match_value)),
         PathSegment::Index(i) => format!("- # index {i}"),
         PathSegment::Unmatched => "-".to_owned(),
+    }
+}
+
+/// Formats a match-key value for a `NamedElement` label.
+///
+/// Key values are expected to be scalars. The scalar contract is not enforced,
+/// so a compound value (object or array) falls back to compact JSON rather than
+/// panicking.
+fn format_match_value(value: &Value) -> String {
+    if is_scalar(value) {
+        format_scalar(value)
+    } else {
+        value.to_string()
     }
 }
 
@@ -607,7 +618,6 @@ fn push_line(output: &mut String, prefix: char, indent: u16, content: &str) {
     output.push_str(&line);
     output.push('\n');
 }
-
 
 /// Formats a JSON value as a YAML scalar.
 fn format_scalar(value: &Value) -> String {
@@ -844,6 +854,31 @@ mod tests {
                 -  y: 2
                 -  z: 3
             "}
+        );
+    }
+
+    #[test]
+    fn compound_match_value_renders_as_compact_json() {
+        // Key values are expected to be scalars, but the contract is not
+        // enforced. A compound key value must render as compact JSON rather
+        // than panic the renderer.
+        use crate::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            "items",
+            ArrayMatchConfig::new(ArrayMatchMode::Key("k".to_owned())),
+        ));
+        let actual = json!({"items": [{"k": {"x": 1}, "v": "a"}]});
+        let expected = json!({"items": [{"k": {"x": 1}, "v": "b"}]});
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
+        let output = YamlRenderer::new().render(&tree);
+        assert_eq!(
+            output,
+            indoc! {r#"
+                 items:
+                   - k: {"x":1}
+                -    v: b
+                +    v: a
+            "#}
         );
     }
 
