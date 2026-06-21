@@ -156,10 +156,8 @@ impl YamlRenderer {
         match self.color_mode {
             ColorMode::Always => true,
             ColorMode::Never => false,
-            ColorMode::Auto => {
-                supports_color::on(supports_color::Stream::Stdout)
-                    .is_some_and(|level| level.has_basic)
-            }
+            ColorMode::Auto => supports_color::on(supports_color::Stream::Stdout)
+                .is_some_and(|level| level.has_basic),
         }
     }
 
@@ -436,9 +434,22 @@ fn format_segment_label(segment: &PathSegment) -> String {
         PathSegment::NamedElement {
             match_key,
             match_value,
-        } => format!("- {match_key}: {match_value}"),
+        } => format!("- {match_key}: {val}", val = format_match_value(match_value)),
         PathSegment::Index(i) => format!("- # index {i}"),
         PathSegment::Unmatched => "-".to_owned(),
+    }
+}
+
+/// Formats a match-key value for a `NamedElement` label.
+///
+/// Key values are expected to be scalars. The scalar contract is not enforced,
+/// so a compound value (object or array) falls back to compact JSON rather than
+/// panicking.
+fn format_match_value(value: &Value) -> String {
+    if is_scalar(value) {
+        format_scalar(value)
+    } else {
+        value.to_string()
     }
 }
 
@@ -607,7 +618,6 @@ fn push_line(output: &mut String, prefix: char, indent: u16, content: &str) {
     output.push_str(&line);
     output.push('\n');
 }
-
 
 /// Formats a JSON value as a YAML scalar.
 fn format_scalar(value: &Value) -> String {
