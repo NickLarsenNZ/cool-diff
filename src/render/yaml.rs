@@ -858,6 +858,31 @@ mod tests {
     }
 
     #[test]
+    fn compound_match_value_renders_as_compact_json() {
+        // Key values are expected to be scalars, but the contract is not
+        // enforced. A compound key value must render as compact JSON rather
+        // than panic the renderer.
+        use crate::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            "items",
+            ArrayMatchConfig::new(ArrayMatchMode::Key("k".to_owned())),
+        ));
+        let actual = json!({"items": [{"k": {"x": 1}, "v": "a"}]});
+        let expected = json!({"items": [{"k": {"x": 1}, "v": "b"}]});
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
+        let output = YamlRenderer::new().render(&tree);
+        assert_eq!(
+            output,
+            indoc! {r#"
+                 items:
+                   - k: {"x":1}
+                -    v: b
+                +    v: a
+            "#}
+        );
+    }
+
+    #[test]
     fn omitted_fields_comment() {
         // inner object has 3 keys, expected checks 1 that differs. 2 fields omitted.
         let output = render(
