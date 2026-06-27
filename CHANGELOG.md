@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/NickLarsenNZ/cool-diff/compare/v0.1.1...v0.2.0) - 2026-06-27
+
+### Added
+
+- [**breaking**] Support composite match keys ([#18](https://github.com/NickLarsenNZ/cool-diff/pull/18))
+
+### Fixed
+
+- [**breaking**] Change PatchSegment::match_value to serde_json::Value
+
+### Other
+
+- Preserve string differentiator for custom_renderer example
+- Ensure non-scalar key values still render appropriately
+- Update custom_renderer example
+- fmt
+- Match on numeric key fields
+
 ## [0.1.1](https://github.com/NickLarsenNZ/cool-diff/compare/v0.1.0...v0.1.1) - 2026-06-21
 
 ### Other
