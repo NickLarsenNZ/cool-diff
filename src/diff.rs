@@ -35,6 +35,14 @@ pub enum Error {
         /// The number of candidates that matched.
         count: u16,
     },
+
+    /// Key-based matching was configured with no key fields. With no key to
+    /// match on, every element would match, which is never intended.
+    #[snafu(display("key-based matching at path `{path}` was configured with no key fields"))]
+    NoKeyFields {
+        /// The dot-separated path to the array.
+        path: String,
+    },
 }
 
 /// Computes a diff tree between `actual` and `expected` values.
@@ -227,10 +235,10 @@ fn diff_arrays(
 
     match mode {
         ArrayMatchMode::Index => diff_arrays_by_index(actual_arr, expected_arr, config, path),
-        ArrayMatchMode::Key(key_field) => diff_arrays_by_key(
+        ArrayMatchMode::Key(key_fields) => diff_arrays_by_key(
             actual_arr,
             expected_arr,
-            key_field,
+            key_fields,
             ambiguous_strategy,
             config,
             path,
@@ -309,46 +317,68 @@ fn diff_arrays_by_index(
     })
 }
 
-/// Key-based array matching. Matches elements by a distinguished key field.
+/// Key-based array matching. Matches elements by one or more distinguished
+/// key fields.
 ///
-/// For each expected element, extracts the value of `key_field` and scans
-/// the actual array for an element with the same key value. If found,
+/// For each expected element, reads every `key_fields` value and scans the
+/// actual array for an element whose key fields are all value-equal. Key values
+/// are compared by value, so any scalar (string, number, bool) works. If found,
 /// recurse to compare them. If not found, produce a `Missing` leaf.
 fn diff_arrays_by_key(
     actual_arr: &[Value],
     expected_arr: &[Value],
-    key_field: &str,
+    key_fields: &[String],
     ambiguous_strategy: &AmbiguousMatchStrategy,
     config: &DiffConfig,
     path: &str,
 ) -> Result<DiffResult> {
+    // With no key fields, every element would match, which is never intended.
+    if key_fields.is_empty() {
+        return Err(Error::NoKeyFields {
+            path: path.to_owned(),
+        });
+    }
+
     let mut children = Vec::new();
     // Track which actual elements were matched so we can count omitted ones
     let mut matched_count: u16 = 0;
 
     // Loop through the expected array items and then check each against the
-    // actual array for the element with the matching key.
+    // actual array for the element with the matching key fields.
     for expected_elem in expected_arr {
-        // Extract the key value from the expected element. Key values are
-        // compared by value, so any scalar (string, number, bool) works.
-        // If the expected element doesn't have the key field, that's a
-        // configuration error.
-        let expected_key_val =
-            expected_elem
-                .get(key_field)
+        // Read the expected key (field, value) pairs. A key field absent from
+        // the expected element is a configuration error.
+        let mut expected_keys: Vec<(&str, &Value)> = Vec::with_capacity(key_fields.len());
+        for field in key_fields {
+            let val = expected_elem
+                .get(field)
                 .ok_or_else(|| Error::MissingKeyField {
                     path: path.to_owned(),
-                    key_field: key_field.to_owned(),
+                    key_field: field.clone(),
                 })?;
+            expected_keys.push((field, val));
+        }
 
-        // Find the matching element in the actual array
+        // An actual element matches when every key field is value-equal.
         let candidates: Vec<&Value> = actual_arr
             .iter()
-            .filter(|elem| elem.get(key_field) == Some(expected_key_val))
+            .filter(|elem| {
+                expected_keys
+                    .iter()
+                    .all(|(field, val)| elem.get(*field) == Some(*val))
+            })
             .collect();
 
+        // Build the NamedElement segment from the matched key pairs.
+        let named_segment = || PathSegment::NamedElement {
+            match_keys_values: expected_keys
+                .iter()
+                .map(|(field, val)| ((*field).to_owned(), (*val).clone()))
+                .collect(),
+        };
+
         match candidates.len() {
-            // No actual element has this key value
+            // No actual element matches the key fields
             0 => {
                 let kind = DiffKind::missing(expected_elem.clone());
                 children.push(DiffNode::leaf(PathSegment::Unmatched, kind));
@@ -357,10 +387,7 @@ fn diff_arrays_by_key(
             // Exactly one match, recurse to compare
             1 => {
                 matched_count += 1;
-                let segment = PathSegment::NamedElement {
-                    match_key: key_field.to_owned(),
-                    match_value: expected_key_val.clone(),
-                };
+                let segment = named_segment();
                 match diff_values(candidates[0], expected_elem, config, path)? {
                     // Values are equal, nothing to record
                     DiffResult::Equal => {}
@@ -386,7 +413,7 @@ fn diff_arrays_by_key(
                 }
             }
 
-            // Multiple actual elements share the same key value
+            // Multiple actual elements match the key fields
             _ => match ambiguous_strategy {
                 AmbiguousMatchStrategy::Strict => {
                     return Err(Error::AmbiguousMatch {
@@ -397,10 +424,7 @@ fn diff_arrays_by_key(
 
                 AmbiguousMatchStrategy::BestMatch | AmbiguousMatchStrategy::Silent => {
                     matched_count += 1;
-                    let segment = PathSegment::NamedElement {
-                        match_key: key_field.to_owned(),
-                        match_value: expected_key_val.clone(),
-                    };
+                    let segment = named_segment();
                     // Pick the candidate with the fewest diffs
                     let best =
                         pick_best_match(candidates.iter().copied(), expected_elem, config, path)?;
@@ -862,7 +886,7 @@ mod tests {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
         DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
             path,
-            ArrayMatchConfig::new(ArrayMatchMode::Key(key.to_owned())),
+            ArrayMatchConfig::new(ArrayMatchMode::key(key)),
         ))
     }
 
@@ -895,8 +919,10 @@ mod tests {
             panic!("expected Container for named element");
         };
         assert!(
-            matches!(segment, PathSegment::NamedElement { match_key, match_value }
-                if match_key == "name" && match_value == "FOO"
+            matches!(segment, PathSegment::NamedElement { match_keys_values }
+                if match_keys_values.len() == 1
+                    && match_keys_values[0].0 == "name"
+                    && match_keys_values[0].1 == json!("FOO")
             )
         );
         assert_eq!(children.len(), 1);
@@ -970,6 +996,65 @@ mod tests {
         // items -> NamedElement(id=7) -> label: Changed(old -> new)
         let tree = diff(&actual, &expected, &config).expect("numeric key should match by value");
         assert!(!tree.is_empty());
+    }
+
+    #[test]
+    fn composite_key_resolves_ambiguity() {
+        use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        // Two elements share `port` but differ on `protocol`. A single `port`
+        // key is ambiguous; the (port, protocol) composite key matches uniquely.
+        let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            "ports",
+            ArrayMatchConfig::new(ArrayMatchMode::keys(["port", "protocol"])),
+        ));
+        let actual = json!({"ports": [
+            {"port": 53, "protocol": "UDP", "name": "dns-udp"},
+            {"port": 53, "protocol": "TCP", "name": "dns-tcp"}
+        ]});
+        let expected = json!({"ports": [{"port": 53, "protocol": "TCP", "name": "changed"}]});
+        let tree = diff(&actual, &expected, &config).expect("composite key should match uniquely");
+
+        // ports -> NamedElement(port=53, protocol=TCP) -> name: Changed
+        let DiffNode::Container { children, .. } = &tree.roots[0] else {
+            panic!("expected Container for ports");
+        };
+        assert_eq!(children.len(), 1);
+        let DiffNode::Container {
+            segment, children, ..
+        } = &children[0]
+        else {
+            panic!("expected Container for named element");
+        };
+        assert!(matches!(segment, PathSegment::NamedElement { match_keys_values }
+            if match_keys_values.len() == 2
+                && match_keys_values[0] == ("port".to_owned(), json!(53))
+                && match_keys_values[1] == ("protocol".to_owned(), json!("TCP"))
+        ));
+        assert_eq!(children.len(), 1);
+        let DiffNode::Leaf { segment, kind } = &children[0] else {
+            panic!("expected Leaf");
+        };
+        assert!(matches!(segment, PathSegment::Key(k) if k == "name"));
+        assert!(matches!(kind, DiffKind::Changed { .. }));
+    }
+
+    #[test]
+    fn empty_key_fields_returns_error() {
+        use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        // A key list with no fields cannot distinguish elements, so it is a
+        // configuration error rather than a match-everything.
+        let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            "items",
+            ArrayMatchConfig::new(ArrayMatchMode::keys(Vec::<String>::new())),
+        ));
+        let actual = json!({"items": [{"id": 1}]});
+        let expected = json!({"items": [{"id": 1}]});
+        let result = diff(&actual, &expected, &config);
+
+        let Err(err) = result else {
+            panic!("expected an error");
+        };
+        assert!(matches!(err, Error::NoKeyFields { .. }));
     }
 
     fn config_with_contains_at(path: &str) -> DiffConfig {
@@ -1050,7 +1135,7 @@ mod tests {
         DiffConfig::new().with_match_config(
             MatchConfig::new().with_config_at(
                 path,
-                ArrayMatchConfig::new(ArrayMatchMode::Key(key.to_owned()))
+                ArrayMatchConfig::new(ArrayMatchMode::key(key))
                     .with_ambiguous_strategy(strategy),
             ),
         )

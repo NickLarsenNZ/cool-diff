@@ -148,16 +148,14 @@ pub enum PathSegment {
     /// An object key (e.g. `spec` in `spec.containers`).
     Key(String),
 
-    /// An array element matched by a distinguished key (e.g. `name: FOO`).
+    /// An array element matched by one or more distinguished keys
+    /// (e.g. `name: FOO`, or `containerPort: 53` plus `protocol: TCP`).
     NamedElement {
-        /// The key used to match (e.g. `name`).
-        match_key: String,
-
-        /// The value of the match key (e.g. `FOO` or `8080`).
+        /// The matched key fields and their values, in config order.
         ///
-        /// Held as a [`Value`] so non-string scalar keys (numbers, bools) are
-        /// preserved. Key values are expected to be scalars.
-        match_value: Value,
+        /// Values are held as [`Value`] so non-string scalar keys (numbers,
+        /// bools) are preserved. Key values are expected to be scalars.
+        match_keys_values: Vec<(String, Value)>,
     },
 
     /// An array element matched by position.
