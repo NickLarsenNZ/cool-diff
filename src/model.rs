@@ -151,11 +151,11 @@ pub enum PathSegment {
     /// An array element matched by one or more distinguished keys
     /// (e.g. `name: FOO`, or `containerPort: 53` plus `protocol: TCP`).
     NamedElement {
-        /// The matched key fields and their values, in config order.
+        /// The matched distinguished keys and their values, in config order.
         ///
         /// Values are held as [`Value`] so non-string scalar keys (numbers,
         /// bools) are preserved. Key values are expected to be scalars.
-        match_keys_values: Vec<(String, Value)>,
+        match_kvps: Vec<(String, Value)>,
     },
 
     /// An array element matched by position.

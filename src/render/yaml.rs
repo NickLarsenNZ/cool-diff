@@ -105,10 +105,10 @@ impl YamlRenderer {
                 let child_indent = indent + self.indent_width;
 
                 // A composite NamedElement renders its first key on the `- `
-                // line (the label above); any further key fields follow as
-                // context lines indented under the list item.
-                if let PathSegment::NamedElement { match_keys_values } = segment {
-                    for (key, value) in match_keys_values.iter().skip(1) {
+                // line (via format_segment_label above); the remaining pairs
+                // follow here as context lines indented under the list item.
+                if let PathSegment::NamedElement { match_kvps } = segment {
+                    for (key, value) in match_kvps.iter().skip(1) {
                         push_line(
                             output,
                             indicator::CONTEXT,
@@ -445,11 +445,14 @@ fn omitted_unit(child_kind: &ChildKind, count: u16) -> &'static str {
 fn format_segment_label(segment: &PathSegment) -> String {
     match segment {
         PathSegment::Key(key) => key.clone(),
-        // The first key field is rendered on the `- ` list-item line. Any
-        // further composite keys are emitted as context lines by render_node.
-        PathSegment::NamedElement { match_keys_values } => match match_keys_values.first() {
+        // Only the first matched pair goes on the `- ` list-item line. Any
+        // further composite-key pairs are rendered by `render_node` (its
+        // Container arm, via `match_kvps.iter().skip(1)`). This split assumes a
+        // NamedElement is always a Container, never a Leaf, which holds because
+        // a key match requires an object element.
+        PathSegment::NamedElement { match_kvps } => match match_kvps.first() {
             Some((key, value)) => format!("- {key}: {val}", val = format_match_value(value)),
-            None => unreachable!("NamedElement always has at least one key field (empty key lists are rejected as NoKeyFields)"),
+            None => unreachable!("NamedElement always has at least one distinguished key (empty key lists are rejected as NoDistinguishedKeys)"),
         },
         PathSegment::Index(i) => format!("- # index {i}"),
         PathSegment::Unmatched => "-".to_owned(),

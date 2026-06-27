@@ -141,9 +141,10 @@ pub enum ArrayMatchMode {
     /// Match by position (default). Element 0 compares to element 0, etc.
     Index,
 
-    /// Match by one or more distinguished key fields (e.g. `name`, or the
+    /// Match by one or more distinguished keys (e.g. `name`, or the
     /// `containerPort` + `protocol` pair). Use [`ArrayMatchMode::key`] for a
-    /// single field and [`ArrayMatchMode::keys`] for a composite key.
+    /// single distinguished key and [`ArrayMatchMode::keys`] for a composite of
+    /// several.
     Key(Vec<String>),
 
     /// Find a matching element anywhere in the actual array. Uses exact
@@ -152,14 +153,14 @@ pub enum ArrayMatchMode {
 }
 
 impl ArrayMatchMode {
-    /// Match by a single distinguished key field.
-    pub fn key(field: impl Into<String>) -> Self {
-        Self::Key(vec![field.into()])
+    /// Match by a single distinguished key.
+    pub fn key(key: impl Into<String>) -> Self {
+        Self::Key(vec![key.into()])
     }
 
-    /// Match by a composite of several distinguished key fields.
-    pub fn keys(fields: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        Self::Key(fields.into_iter().map(Into::into).collect())
+    /// Match by a composite of several distinguished keys.
+    pub fn keys(keys: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self::Key(keys.into_iter().map(Into::into).collect())
     }
 }
 

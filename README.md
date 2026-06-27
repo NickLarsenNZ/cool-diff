@@ -103,7 +103,7 @@ By default, arrays are compared by position (index). You can configure per-path 
 | Mode | Description |
 |---|---|
 | **Index** (default) | Match by position. Element 0 compares to element 0, etc. |
-| **Key** | Match by one or more configured distinguished fields (e.g. `name`, or the `containerPort` + `protocol` pair). Scans the actual array for an element whose key fields are all equal. |
+| **Key** | Match by one or more configured distinguished keys (e.g. `name`, or the `containerPort` + `protocol` pair). Scans the actual array for an element whose distinguished keys are all equal. |
 | **Contains** | Find a matching element anywhere. Uses exact comparison for scalars, subset matching for objects. |
 
 ```rust
