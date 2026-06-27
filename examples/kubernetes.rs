@@ -65,19 +65,19 @@ fn main() {
     let pod_match_config = MatchConfig::new()
         .with_config_at(
             "spec.containers",
-            ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+            ArrayMatchConfig::new(ArrayMatchMode::key("name")),
         )
         .with_config_at(
             "spec.containers.env",
-            ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+            ArrayMatchConfig::new(ArrayMatchMode::key("name")),
         )
         .with_config_at(
             "spec.containers.ports",
-            ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+            ArrayMatchConfig::new(ArrayMatchMode::key("name")),
         )
         .with_config_at(
             "spec.volumes",
-            ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+            ArrayMatchConfig::new(ArrayMatchMode::key("name")),
         );
 
     let config = DiffConfig::new().with_match_config(pod_match_config);

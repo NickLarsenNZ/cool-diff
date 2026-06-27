@@ -36,7 +36,7 @@ fn main() {
             // contributors: match by email
             .with_config_at(
                 "contributors",
-                ArrayMatchConfig::new(ArrayMatchMode::Key("email".to_owned())),
+                ArrayMatchConfig::new(ArrayMatchMode::key("email")),
             ),
     );
 
