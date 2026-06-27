@@ -12,27 +12,27 @@ fn k8s_config() -> DiffConfig {
         MatchConfig::new()
             .with_config_at(
                 "spec.containers",
-                ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+                ArrayMatchConfig::new(ArrayMatchMode::key("name")),
             )
             .with_config_at(
                 "spec.containers.env",
-                ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+                ArrayMatchConfig::new(ArrayMatchMode::key("name")),
             )
             .with_config_at(
                 "spec.volumes",
-                ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+                ArrayMatchConfig::new(ArrayMatchMode::key("name")),
             )
             .with_config_at(
                 "spec.ports",
-                ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+                ArrayMatchConfig::new(ArrayMatchMode::key("name")),
             )
             .with_config_at(
                 "spec.template.spec.containers",
-                ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+                ArrayMatchConfig::new(ArrayMatchMode::key("name")),
             )
             .with_config_at(
                 "spec.template.spec.containers.env",
-                ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+                ArrayMatchConfig::new(ArrayMatchMode::key("name")),
             ),
     )
 }

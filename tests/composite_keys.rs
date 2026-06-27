@@ -1,4 +1,7 @@
-use cool_diff::{ArrayMatchConfig, ArrayMatchMode, DiffConfig, MatchConfig, diff};
+use cool_diff::{
+    ArrayMatchConfig, ArrayMatchMode, DiffConfig, DiffRenderer as _, MatchConfig, YamlRenderer,
+    diff,
+};
 use indoc::indoc;
 use serde::Deserialize;
 
@@ -50,15 +53,40 @@ fn dns_pod_ports_match_by_port_and_protocol() {
     let actual = parse(DNS_POD_ACTUAL);
     let expected = parse(DNS_POD_EXPECTED);
 
-    // Single-field key on containerPort is insufficient: ports 53/UDP and
-    // 53/TCP both match containerPort 53, so this is an ambiguous match today.
-    // The single container is paired up by index matching, so only the ports
-    // path needs configuring.
-    let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
-        "spec.containers.ports",
-        ArrayMatchConfig::new(ArrayMatchMode::Key("containerPort".to_owned())),
-    ));
+    // Containers are matched by their distinguished `name`. A single-field key
+    // on containerPort would be ambiguous for ports (53/UDP and 53/TCP share
+    // the number); the (containerPort, protocol) composite key disambiguates.
+    let config = DiffConfig::new().with_match_config(
+        MatchConfig::new()
+            .with_config_at(
+                "spec.containers",
+                ArrayMatchConfig::new(ArrayMatchMode::key("name")),
+            )
+            .with_config_at(
+                "spec.containers.ports",
+                ArrayMatchConfig::new(ArrayMatchMode::keys(["containerPort", "protocol"])),
+            ),
+    );
 
     let tree = diff(&actual, &expected, &config).expect("ports should match by port and protocol");
-    assert!(!tree.is_empty());
+
+    // The composite key matched the 53/TCP port specifically (not 53/UDP), and
+    // the only difference is the expected `name` the actual port lacks.
+    let output = YamlRenderer::new()
+        .with_max_lines_per_side(None)
+        .render(&tree);
+    assert_eq!(
+        output,
+        indoc! {"
+             spec:
+               containers:
+                 - name: coredns
+                   # 1 field omitted
+                   ports:
+                     # 2 items omitted
+                     - containerPort: 53
+                       protocol: TCP
+            -          name: dns-tcp
+        "}
+    );
 }
