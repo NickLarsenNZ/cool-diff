@@ -104,6 +104,20 @@ impl YamlRenderer {
 
                 let child_indent = indent + self.indent_width;
 
+                // A composite NamedElement renders its first key on the `- `
+                // line (via format_segment_label above); the remaining pairs
+                // follow here as context lines indented under the list item.
+                if let PathSegment::NamedElement { match_kvps } = segment {
+                    for (key, value) in match_kvps.iter().skip(1) {
+                        push_line(
+                            output,
+                            indicator::CONTEXT,
+                            child_indent,
+                            &format!("{key}: {val}", val = format_match_value(value)),
+                        );
+                    }
+                }
+
                 if *omitted_count > 0 {
                     let unit = omitted_unit(child_kind, *omitted_count);
                     push_line(
@@ -431,10 +445,15 @@ fn omitted_unit(child_kind: &ChildKind, count: u16) -> &'static str {
 fn format_segment_label(segment: &PathSegment) -> String {
     match segment {
         PathSegment::Key(key) => key.clone(),
-        PathSegment::NamedElement {
-            match_key,
-            match_value,
-        } => format!("- {match_key}: {val}", val = format_match_value(match_value)),
+        // Only the first matched pair goes on the `- ` list-item line. Any
+        // further composite-key pairs are rendered by `render_node` (its
+        // Container arm, via `match_kvps.iter().skip(1)`). This split assumes a
+        // NamedElement is always a Container, never a Leaf, which holds because
+        // a key match requires an object element.
+        PathSegment::NamedElement { match_kvps } => match match_kvps.first() {
+            Some((key, value)) => format!("- {key}: {val}", val = format_match_value(value)),
+            None => unreachable!("NamedElement always has at least one distinguished key (empty key lists are rejected as NoDistinguishedKeys)"),
+        },
         PathSegment::Index(i) => format!("- # index {i}"),
         PathSegment::Unmatched => "-".to_owned(),
     }
@@ -865,7 +884,7 @@ mod tests {
         use crate::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
         let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
             "items",
-            ArrayMatchConfig::new(ArrayMatchMode::Key("k".to_owned())),
+            ArrayMatchConfig::new(ArrayMatchMode::key("k")),
         ));
         let actual = json!({"items": [{"k": {"x": 1}, "v": "a"}]});
         let expected = json!({"items": [{"k": {"x": 1}, "v": "b"}]});
@@ -879,6 +898,30 @@ mod tests {
                 -    v: b
                 +    v: a
             "#}
+        );
+    }
+
+    #[test]
+    fn composite_named_element_renders_multiline() {
+        use crate::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
+        // A composite key renders its first field on the `- ` line and the rest
+        // as indented context lines.
+        let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            "ports",
+            ArrayMatchConfig::new(ArrayMatchMode::keys(["containerPort", "protocol"])),
+        ));
+        let actual = json!({"ports": [{"containerPort": 53, "protocol": "TCP"}]});
+        let expected = json!({"ports": [{"containerPort": 53, "protocol": "TCP", "name": "dns-tcp"}]});
+        let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
+        let output = YamlRenderer::new().render(&tree);
+        assert_eq!(
+            output,
+            indoc! {"
+                 ports:
+                   - containerPort: 53
+                     protocol: TCP
+                -    name: dns-tcp
+            "}
         );
     }
 

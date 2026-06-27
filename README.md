@@ -103,7 +103,7 @@ By default, arrays are compared by position (index). You can configure per-path 
 | Mode | Description |
 |---|---|
 | **Index** (default) | Match by position. Element 0 compares to element 0, etc. |
-| **Key** | Match by a configured distinguished field (e.g. `name`). Scans the actual array for an element with the same key value. |
+| **Key** | Match by one or more configured distinguished keys (e.g. `name`, or the `containerPort` + `protocol` pair). Scans the actual array for an element whose distinguished keys are all equal. |
 | **Contains** | Find a matching element anywhere. Uses exact comparison for scalars, subset matching for objects. |
 
 ```rust
@@ -113,7 +113,12 @@ let config = DiffConfig::new().with_match_config(
     MatchConfig::new()
         .with_config_at(
             "spec.containers",
-            ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned())),
+            ArrayMatchConfig::new(ArrayMatchMode::key("name")),
+        )
+        // Composite key: match ports by the (containerPort, protocol) pair
+        .with_config_at(
+            "spec.containers.ports",
+            ArrayMatchConfig::new(ArrayMatchMode::keys(["containerPort", "protocol"])),
         )
         .with_config_at(
             "tags",

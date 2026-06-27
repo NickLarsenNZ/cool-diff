@@ -34,7 +34,7 @@ fn main() {
     let config = DiffConfig::new().with_match_config(
         MatchConfig::new().with_config_at(
             "users",
-            ArrayMatchConfig::new(ArrayMatchMode::Key("name".to_owned()))
+            ArrayMatchConfig::new(ArrayMatchMode::key("name"))
                 // Strict is the default, but we set it explicitly here for clarity
                 .with_ambiguous_strategy(AmbiguousMatchStrategy::Strict),
         ),

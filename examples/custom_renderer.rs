@@ -60,14 +60,16 @@ fn render_node(node: &DiffNode, path: &mut Vec<String>, output: &mut String) {
 fn format_segment(segment: &PathSegment) -> String {
     match segment {
         PathSegment::Key(key) => key.clone(),
-        PathSegment::NamedElement {
-            match_key,
-            match_value,
-        } => {
-            // match_value is a serde_json::Value rendered via its JSON Display,
-            // so the type is preserved: [name="app"] for a string, [id=42] for a
-            // number.
-            format!("[{match_key}={match_value}]")
+        PathSegment::NamedElement { match_kvps } => {
+            // Values render via serde_json::Value's JSON Display, preserving the
+            // type: [name="app"] for a string, [containerPort=53] for a number.
+            // Composite keys are joined, e.g. [containerPort=53,protocol="TCP"].
+            let rendered = match_kvps
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("[{rendered}]")
         }
         PathSegment::Index(i) => format!("[{i}]"),
         PathSegment::Unmatched => "[?]".to_owned(),
