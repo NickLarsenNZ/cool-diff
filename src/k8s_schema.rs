@@ -22,8 +22,65 @@ use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
 /// Inspects the array properties of `root` and records a per-path match mode
 /// for those whose vendor extensions call for something other than index
 /// matching.
-pub fn match_config_from_schema(_root: &Value) -> MatchConfig {
-    MatchConfig::new()
+pub fn match_config_from_schema(root: &Value) -> MatchConfig {
+    let mut config = MatchConfig::new();
+
+    let Some(properties) = root.get("properties").and_then(Value::as_object) else {
+        return config;
+    };
+
+    for (name, schema) in properties {
+        if let Some(mode) = array_match_mode(schema) {
+            config = config.with_config_at(name, ArrayMatchConfig::new(mode));
+        }
+    }
+
+    config
+}
+
+/// Determines the [`ArrayMatchMode`] for an array property schema from its
+/// vendor extensions, or `None` when index matching (the default) applies.
+fn array_match_mode(schema: &Value) -> Option<ArrayMatchMode> {
+    // The newer `x-kubernetes-list-type` takes precedence over the legacy
+    // patch-merge annotations.
+    if let Some(list_type) = schema.get("x-kubernetes-list-type").and_then(Value::as_str) {
+        return match list_type {
+            "map" => {
+                let keys: Vec<&str> = schema
+                    .get("x-kubernetes-list-map-keys")
+                    .and_then(Value::as_array)
+                    .map(|keys| keys.iter().filter_map(Value::as_str).collect())
+                    .unwrap_or_default();
+                // A `map` with no keys would produce an empty key set, which the
+                // diff algorithm rejects. Omit it rather than emit a broken config.
+                if keys.is_empty() {
+                    None
+                } else {
+                    Some(ArrayMatchMode::keys(keys))
+                }
+            }
+            "set" => Some(ArrayMatchMode::Contains),
+            // "atomic" or anything unrecognised: index matching (the default).
+            _ => None,
+        };
+    }
+
+    legacy_merge_key(schema).map(ArrayMatchMode::key)
+}
+
+/// Extracts the legacy `x-kubernetes-patch-merge-key` when the patch strategy
+/// is a merge.
+fn legacy_merge_key(schema: &Value) -> Option<&str> {
+    let strategy = schema
+        .get("x-kubernetes-patch-strategy")
+        .and_then(Value::as_str)?;
+    // The strategy can be comma-separated, e.g. "merge,retainKeys".
+    if !strategy.split(',').any(|part| part == "merge") {
+        return None;
+    }
+    schema
+        .get("x-kubernetes-patch-merge-key")
+        .and_then(Value::as_str)
 }
 
 #[cfg(test)]
