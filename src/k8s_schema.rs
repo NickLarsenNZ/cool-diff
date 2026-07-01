@@ -22,7 +22,7 @@ use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
 /// Inspects the array properties of `root` and records a per-path match mode
 /// for those whose vendor extensions call for something other than index
 /// matching.
-pub fn match_config_from_schema(root: &Value) -> MatchConfig {
+pub fn match_config_from_schema(root: &Value, _components: Option<&Value>) -> MatchConfig {
     let mut config = MatchConfig::new();
 
     let Some(properties) = root.get("properties").and_then(Value::as_object) else {
@@ -100,7 +100,7 @@ mod tests {
                 }
             }
         });
-        let config = match_config_from_schema(&schema);
+        let config = match_config_from_schema(&schema, None);
         let mode = config.config_at("ports").expect("ports configured").mode();
         assert!(matches!(mode, ArrayMatchMode::Key(keys)
             if keys == &["containerPort".to_owned(), "protocol".to_owned()]
@@ -118,7 +118,7 @@ mod tests {
                 }
             }
         });
-        let config = match_config_from_schema(&schema);
+        let config = match_config_from_schema(&schema, None);
         let mode = config
             .config_at("finalizers")
             .expect("finalizers configured")
@@ -138,7 +138,7 @@ mod tests {
                 "command": { "type": "array", "items": {} }
             }
         });
-        let config = match_config_from_schema(&schema);
+        let config = match_config_from_schema(&schema, None);
         // Omission is intentional, not an oversight: atomic and unannotated
         // arrays use index matching, which is MatchConfig's default. Emitting a
         // config entry would be redundant.
@@ -164,7 +164,7 @@ mod tests {
                 }
             }
         });
-        let config = match_config_from_schema(&schema);
+        let config = match_config_from_schema(&schema, None);
         let mode = config
             .config_at("containers")
             .expect("containers configured")
@@ -187,13 +187,130 @@ mod tests {
                 }
             }
         });
-        let config = match_config_from_schema(&schema);
+        let config = match_config_from_schema(&schema, None);
         // Omission is intentional: emitting keys([]) would build a config the
         // diff algorithm rejects at runtime (NoDistinguishedKeys). Better to
         // omit the malformed entry than to produce a config that errors later.
         assert!(
             config.config_at("weird").is_none(),
             "map list-type without map-keys should be omitted, not emitted as an empty key set"
+        );
+    }
+
+    #[test]
+    fn nested_arrays_get_dotted_paths() {
+        // An array nested inside an array element is recorded at the dotted
+        // path, matching how the diff engine looks up config for nested arrays
+        // (e.g. spec.containers.ports).
+        let schema = json!({
+            "properties": {
+                "spec": {
+                    "properties": {
+                        "containers": {
+                            "type": "array",
+                            "x-kubernetes-list-type": "map",
+                            "x-kubernetes-list-map-keys": ["name"],
+                            "items": {
+                                "properties": {
+                                    "ports": {
+                                        "type": "array",
+                                        "x-kubernetes-list-type": "map",
+                                        "x-kubernetes-list-map-keys": ["containerPort", "protocol"],
+                                        "items": {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let config = match_config_from_schema(&schema, None);
+
+        let containers = config
+            .config_at("spec.containers")
+            .expect("spec.containers configured")
+            .mode();
+        assert!(matches!(containers, ArrayMatchMode::Key(keys)
+            if keys == &["name".to_owned()]
+        ));
+
+        let ports = config
+            .config_at("spec.containers.ports")
+            .expect("spec.containers.ports configured")
+            .mode();
+        assert!(matches!(ports, ArrayMatchMode::Key(keys)
+            if keys == &["containerPort".to_owned(), "protocol".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn ref_is_resolved() {
+        // An array whose items are a $ref must be resolved so nested arrays in
+        // the referenced schema are discovered.
+        let root = json!({
+            "properties": {
+                "spec": {
+                    "properties": {
+                        "containers": {
+                            "type": "array",
+                            "x-kubernetes-list-type": "map",
+                            "x-kubernetes-list-map-keys": ["name"],
+                            "items": { "$ref": "#/components/schemas/Container" }
+                        }
+                    }
+                }
+            }
+        });
+        let components = json!({
+            "Container": {
+                "properties": {
+                    "ports": {
+                        "type": "array",
+                        "x-kubernetes-list-type": "map",
+                        "x-kubernetes-list-map-keys": ["containerPort", "protocol"],
+                        "items": {}
+                    }
+                }
+            }
+        });
+        let config = match_config_from_schema(&root, Some(&components));
+
+        let ports = config
+            .config_at("spec.containers.ports")
+            .expect("spec.containers.ports resolved via $ref")
+            .mode();
+        assert!(matches!(ports, ArrayMatchMode::Key(keys)
+            if keys == &["containerPort".to_owned(), "protocol".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn cyclic_ref_terminates() {
+        // A self-referential schema must not recurse forever. Arrays before the
+        // cycle are still recorded; the repeated ref is not descended again.
+        let root = json!({ "$ref": "#/components/schemas/Node" });
+        let components = json!({
+            "Node": {
+                "properties": {
+                    "children": {
+                        "type": "array",
+                        "x-kubernetes-list-type": "map",
+                        "x-kubernetes-list-map-keys": ["id"],
+                        "items": { "$ref": "#/components/schemas/Node" }
+                    }
+                }
+            }
+        });
+        let config = match_config_from_schema(&root, Some(&components));
+
+        assert!(
+            config.config_at("children").is_some(),
+            "the first level of the cyclic schema should be recorded"
+        );
+        assert!(
+            config.config_at("children.children").is_none(),
+            "the cycle should stop before descending into itself again"
         );
     }
 }
