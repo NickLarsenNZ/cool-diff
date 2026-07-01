@@ -1,0 +1,86 @@
+{
+  "components": {
+    "schemas": {
+      "io.k8s.api.core.v1.Pod": {
+        "type": "object",
+        "properties": {
+          "apiVersion": { "type": "string" },
+          "kind": { "type": "string" },
+          "metadata": {
+            "allOf": [{ "$ref": "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta" }],
+            "default": {}
+          },
+          "spec": {
+            "allOf": [{ "$ref": "#/components/schemas/io.k8s.api.core.v1.PodSpec" }],
+            "default": {},
+            "description": "Specification of the desired behavior of the pod."
+          }
+        }
+      },
+      "io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "namespace": { "type": "string" }
+        }
+      },
+      "io.k8s.api.core.v1.PodSpec": {
+        "type": "object",
+        "properties": {
+          "containers": {
+            "type": "array",
+            "description": "List of containers belonging to the pod.",
+            "x-kubernetes-list-type": "map",
+            "x-kubernetes-list-map-keys": ["name"],
+            "items": {
+              "allOf": [{ "$ref": "#/components/schemas/io.k8s.api.core.v1.Container" }],
+              "default": {}
+            }
+          },
+          "tolerations": {
+            "type": "array",
+            "description": "If specified, the pod's tolerations.",
+            "x-kubernetes-list-type": "atomic",
+            "items": {
+              "allOf": [{ "$ref": "#/components/schemas/io.k8s.api.core.v1.Toleration" }],
+              "default": {}
+            }
+          }
+        }
+      },
+      "io.k8s.api.core.v1.Container": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "image": { "type": "string" },
+          "ports": {
+            "type": "array",
+            "description": "List of ports to expose from the container.",
+            "x-kubernetes-list-type": "map",
+            "x-kubernetes-list-map-keys": ["containerPort", "protocol"],
+            "items": {
+              "allOf": [{ "$ref": "#/components/schemas/io.k8s.api.core.v1.ContainerPort" }],
+              "default": {}
+            }
+          }
+        }
+      },
+      "io.k8s.api.core.v1.ContainerPort": {
+        "type": "object",
+        "properties": {
+          "containerPort": { "type": "integer", "format": "int32" },
+          "protocol": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      },
+      "io.k8s.api.core.v1.Toleration": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "operator": { "type": "string" },
+          "effect": { "type": "string" }
+        }
+      }
+    }
+  }
+}

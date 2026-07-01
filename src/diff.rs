@@ -888,10 +888,10 @@ mod tests {
 
     fn config_with_key_at(path: &str, key: &str) -> DiffConfig {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
-        DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
-            path,
-            ArrayMatchConfig::new(ArrayMatchMode::key(key)),
-        ))
+        DiffConfig::new().with_match_config(
+            MatchConfig::new()
+                .with_config_at(path, ArrayMatchConfig::new(ArrayMatchMode::key(key))),
+        )
     }
 
     #[test]
@@ -922,13 +922,11 @@ mod tests {
         else {
             panic!("expected Container for named element");
         };
-        assert!(
-            matches!(segment, PathSegment::NamedElement { match_kvps }
-                if match_kvps.len() == 1
-                    && match_kvps[0].0 == "name"
-                    && match_kvps[0].1 == json!("FOO")
-            )
-        );
+        assert!(matches!(segment, PathSegment::NamedElement { match_kvps }
+            if match_kvps.len() == 1
+                && match_kvps[0].0 == "name"
+                && match_kvps[0].1 == json!("FOO")
+        ));
         assert_eq!(children.len(), 1);
         let DiffNode::Leaf { segment, kind } = &children[0] else {
             panic!("expected Leaf");
@@ -1136,13 +1134,10 @@ mod tests {
         strategy: AmbiguousMatchStrategy,
     ) -> DiffConfig {
         use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
-        DiffConfig::new().with_match_config(
-            MatchConfig::new().with_config_at(
-                path,
-                ArrayMatchConfig::new(ArrayMatchMode::key(key))
-                    .with_ambiguous_strategy(strategy),
-            ),
-        )
+        DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
+            path,
+            ArrayMatchConfig::new(ArrayMatchMode::key(key)).with_ambiguous_strategy(strategy),
+        ))
     }
 
     fn config_with_contains_and_strategy(

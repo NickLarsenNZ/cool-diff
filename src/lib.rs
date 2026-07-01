@@ -56,12 +56,16 @@ pub mod model;
 /// Rendering diff trees as human-readable output.
 pub mod render;
 
+/// Deriving a [`MatchConfig`] from a Kubernetes OpenAPI schema (experimental).
+#[cfg(feature = "experimental")]
+pub mod k8s_schema;
+
 pub use config::{
     AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig, MatchConfig,
 };
 pub use diff::{Error, diff};
 pub use model::{ChildKind, DiffKind, DiffNode, DiffTree, PathSegment};
 pub use render::DiffRenderer;
-pub use render::yaml::YamlRenderer;
 #[cfg(feature = "color")]
 pub use render::yaml::ColorMode;
+pub use render::yaml::YamlRenderer;

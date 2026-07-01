@@ -452,7 +452,9 @@ fn format_segment_label(segment: &PathSegment) -> String {
         // a key match requires an object element.
         PathSegment::NamedElement { match_kvps } => match match_kvps.first() {
             Some((key, value)) => format!("- {key}: {val}", val = format_match_value(value)),
-            None => unreachable!("NamedElement always has at least one distinguished key (empty key lists are rejected as NoDistinguishedKeys)"),
+            None => unreachable!(
+                "NamedElement always has at least one distinguished key (empty key lists are rejected as NoDistinguishedKeys)"
+            ),
         },
         PathSegment::Index(i) => format!("- # index {i}"),
         PathSegment::Unmatched => "-".to_owned(),
@@ -882,10 +884,10 @@ mod tests {
         // enforced. A compound key value must render as compact JSON rather
         // than panic the renderer.
         use crate::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
-        let config = DiffConfig::new().with_match_config(MatchConfig::new().with_config_at(
-            "items",
-            ArrayMatchConfig::new(ArrayMatchMode::key("k")),
-        ));
+        let config = DiffConfig::new().with_match_config(
+            MatchConfig::new()
+                .with_config_at("items", ArrayMatchConfig::new(ArrayMatchMode::key("k"))),
+        );
         let actual = json!({"items": [{"k": {"x": 1}, "v": "a"}]});
         let expected = json!({"items": [{"k": {"x": 1}, "v": "b"}]});
         let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
@@ -911,7 +913,8 @@ mod tests {
             ArrayMatchConfig::new(ArrayMatchMode::keys(["containerPort", "protocol"])),
         ));
         let actual = json!({"ports": [{"containerPort": 53, "protocol": "TCP"}]});
-        let expected = json!({"ports": [{"containerPort": 53, "protocol": "TCP", "name": "dns-tcp"}]});
+        let expected =
+            json!({"ports": [{"containerPort": 53, "protocol": "TCP", "name": "dns-tcp"}]});
         let tree = diff(&actual, &expected, &config).expect("diff with valid inputs");
         let output = YamlRenderer::new().render(&tree);
         assert_eq!(
