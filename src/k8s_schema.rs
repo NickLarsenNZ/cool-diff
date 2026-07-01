@@ -13,29 +13,100 @@
 //!
 //! This module is experimental and its API may change.
 
+use std::collections::HashSet;
+
 use serde_json::Value;
 
 use crate::config::{ArrayMatchConfig, ArrayMatchMode, MatchConfig};
 
+/// The `$ref` prefix for schemas in an OpenAPI v3 document
+/// (e.g. `#/components/schemas/io.k8s.api.core.v1.Pod`).
+const REF_PREFIX: &str = "#/components/schemas/";
+
 /// Derives a [`MatchConfig`] from a Kubernetes OpenAPI object schema.
 ///
-/// Inspects the array properties of `root` and records a per-path match mode
-/// for those whose vendor extensions call for something other than index
-/// matching.
-pub fn match_config_from_schema(root: &Value, _components: Option<&Value>) -> MatchConfig {
-    let mut config = MatchConfig::new();
+/// Recursively walks `root`, recording a per-path match mode for every array
+/// whose vendor extensions call for something other than index matching. Paths
+/// are dot-separated (e.g. `spec.containers.ports`), matching how the diff
+/// engine looks up config for nested arrays.
+///
+/// `components` is the `#/components/schemas` map used to resolve `$ref`s. Pass
+/// `None` for a fully-inlined schema (such as a CRD's `openAPIV3Schema`), where
+/// there are no references to resolve.
+pub fn match_config_from_schema(root: &Value, components: Option<&Value>) -> MatchConfig {
+    let mut entries: Vec<(String, ArrayMatchMode)> = Vec::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    collect(root, "", components, &mut entries, &mut visited);
 
-    let Some(properties) = root.get("properties").and_then(Value::as_object) else {
-        return config;
-    };
+    entries
+        .into_iter()
+        .fold(MatchConfig::new(), |config, (path, mode)| {
+            config.with_config_at(&path, ArrayMatchConfig::new(mode))
+        })
+}
 
-    for (name, schema) in properties {
-        if let Some(mode) = array_match_mode(schema) {
-            config = config.with_config_at(name, ArrayMatchConfig::new(mode));
+/// Recursively collects `(path, mode)` entries from a schema.
+///
+/// `visited` tracks the `$ref`s on the current descent so a self-referential
+/// schema terminates. It is added on entry and removed on exit, so a shared
+/// type referenced from sibling branches is still walked in each.
+fn collect(
+    schema: &Value,
+    path: &str,
+    components: Option<&Value>,
+    entries: &mut Vec<(String, ArrayMatchMode)>,
+    visited: &mut HashSet<String>,
+) {
+    // Resolve a `$ref` before anything else.
+    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+        if visited.contains(reference) {
+            return; // cycle: stop descending this branch
         }
+        if let Some(resolved) = resolve(reference, components) {
+            visited.insert(reference.to_owned());
+            collect(resolved, path, components, entries, visited);
+            visited.remove(reference);
+        }
+        return;
     }
 
-    config
+    if is_array(schema) {
+        if let Some(mode) = array_match_mode(schema) {
+            entries.push((path.to_owned(), mode));
+        }
+        // Recurse into the element schema at the same path, so nested arrays
+        // (e.g. containers -> ports) are discovered under the array's path.
+        if let Some(items) = schema.get("items") {
+            collect(items, path, components, entries, visited);
+        }
+        return;
+    }
+
+    // Object schema: recurse into each property, extending the dot-path.
+    if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
+        for (name, child) in properties {
+            let child_path = if path.is_empty() {
+                name.clone()
+            } else {
+                format!("{path}.{name}")
+            };
+            collect(child, &child_path, components, entries, visited);
+        }
+    }
+}
+
+/// Resolves a `#/components/schemas/NAME` reference against the components map.
+///
+/// Returns `None` when there is no components map, or for references that do
+/// not point into it (e.g. external `$ref`s), so they are simply not descended.
+fn resolve<'a>(reference: &str, components: Option<&'a Value>) -> Option<&'a Value> {
+    let name = reference.strip_prefix(REF_PREFIX)?;
+    components?.get(name)
+}
+
+/// Returns true if the schema describes an array.
+fn is_array(schema: &Value) -> bool {
+    schema.get("type").and_then(Value::as_str) == Some("array") || schema.get("items").is_some()
 }
 
 /// Determines the [`ArrayMatchMode`] for an array property schema from its
