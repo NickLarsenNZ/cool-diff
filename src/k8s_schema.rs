@@ -384,4 +384,62 @@ mod tests {
             "the cycle should stop before descending into itself again"
         );
     }
+
+    #[test]
+    fn allof_wrapped_refs_are_resolved() {
+        // The real Kubernetes spec wraps every $ref in an `allOf` alongside
+        // `default`/`description` metadata, both for object properties and for
+        // array `items`. The walker must descend through `allOf` to resolve them.
+        let root = json!({
+            "properties": {
+                "spec": {
+                    "allOf": [{ "$ref": "#/components/schemas/PodSpec" }],
+                    "default": {},
+                    "description": "the pod spec"
+                }
+            }
+        });
+        let components = json!({
+            "PodSpec": {
+                "properties": {
+                    "containers": {
+                        "type": "array",
+                        "x-kubernetes-list-type": "map",
+                        "x-kubernetes-list-map-keys": ["name"],
+                        "items": {
+                            "allOf": [{ "$ref": "#/components/schemas/Container" }],
+                            "default": {}
+                        }
+                    }
+                }
+            },
+            "Container": {
+                "properties": {
+                    "ports": {
+                        "type": "array",
+                        "x-kubernetes-list-type": "map",
+                        "x-kubernetes-list-map-keys": ["containerPort", "protocol"],
+                        "items": {}
+                    }
+                }
+            }
+        });
+        let config = match_config_from_schema(&root, Some(&components));
+
+        let containers = config
+            .config_at("spec.containers")
+            .expect("spec.containers resolved through allOf")
+            .mode();
+        assert!(matches!(containers, ArrayMatchMode::Key(keys)
+            if keys == &["name".to_owned()]
+        ));
+
+        let ports = config
+            .config_at("spec.containers.ports")
+            .expect("spec.containers.ports resolved through allOf")
+            .mode();
+        assert!(matches!(ports, ArrayMatchMode::Key(keys)
+            if keys == &["containerPort".to_owned(), "protocol".to_owned()]
+        ));
+    }
 }
