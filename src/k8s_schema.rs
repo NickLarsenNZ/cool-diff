@@ -11,6 +11,27 @@
 //! - The legacy `x-kubernetes-patch-strategy: merge` +
 //!   `x-kubernetes-patch-merge-key: k` maps to [`ArrayMatchMode::key`].
 //!
+//! # Atomic lists and order
+//!
+//! An `atomic` list is matched by index, which is order-sensitive. Kubernetes
+//! marks a list `atomic` to mean "replace as a whole", which is often just
+//! because the list has no single key to merge on, not because element order is
+//! semantically meaningful. `spec.tolerations` is one such case: a pod tolerates
+//! a taint if any toleration matches, so order is irrelevant, yet the list is
+//! `atomic`.
+//!
+//! The derived config reflects the schema; it cannot infer that a particular
+//! atomic list is order-insensitive. Index matching compares by position:
+//! expected element `i` is compared against actual element `i`, and actual
+//! elements past the end of the expected list are ignored. So an assertion must
+//! supply a leading prefix of the list in the actual order; to assert on one
+//! element you must include every element before it.
+//!
+//! When a specific atomic list is really order-insensitive (as `spec.tolerations`
+//! is), override that path on the returned [`MatchConfig`] with
+//! [`MatchConfig::with_config_at`] set to [`ArrayMatchMode::Contains`], which
+//! matches an element anywhere regardless of position.
+//!
 //! This module is experimental and its API may change.
 
 use std::collections::HashSet;
