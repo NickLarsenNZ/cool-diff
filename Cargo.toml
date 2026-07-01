@@ -13,6 +13,7 @@ exclude = [".github/", "deny.toml", "RELEASE.md", "rust-toolchain.toml"]
 
 [features]
 color = ["dep:owo-colors", "dep:supports-color"]
+experimental = []
 
 [dependencies]
 owo-colors = { version = "4", optional = true }

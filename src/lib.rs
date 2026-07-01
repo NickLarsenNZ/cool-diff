@@ -56,6 +56,10 @@ pub mod model;
 /// Rendering diff trees as human-readable output.
 pub mod render;
 
+/// Deriving a [`MatchConfig`] from a Kubernetes OpenAPI schema (experimental).
+#[cfg(feature = "experimental")]
+pub mod k8s_schema;
+
 pub use config::{
     AmbiguousMatchStrategy, ArrayMatchConfig, ArrayMatchMode, DiffConfig, MatchConfig,
 };
