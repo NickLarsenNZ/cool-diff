@@ -32,6 +32,7 @@ Designed for comparing Kubernetes resources, API responses, config files, or any
   - [x] Truncation for large subtrees (`# N more lines`)
   - [x] Omitted field/item markers (`# N fields omitted`)
   - [x] ANSI colour output for terminal rendering (behind `color` feature gate)
+- [x] Derive a `MatchConfig` from a Kubernetes OpenAPI schema (behind `experimental` feature gate)
 - [ ] JSON renderer
 - [ ] Pre-configured `MatchConfig` for common Kubernetes resource types
 - [ ] Inline comparison directives in the expected value
@@ -127,6 +128,47 @@ let config = DiffConfig::new().with_match_config(
 );
 ```
 
+## Deriving a config from a Kubernetes OpenAPI schema (experimental)
+
+Writing per-path match configs by hand is tedious for large resources. Behind
+the `experimental` feature gate, `cool_diff::k8s_schema` can derive a
+`MatchConfig` straight from a Kubernetes OpenAPI v3 schema, reading the
+`x-kubernetes-list-type` / `x-kubernetes-list-map-keys` (and legacy
+`x-kubernetes-patch-merge-key`) extensions:
+
+```rust
+use cool_diff::k8s_schema;
+
+let doc: serde_json::Value = serde_json::from_str(spec)?;
+let schemas = &doc["components"]["schemas"];
+let pod = &schemas["io.k8s.api.core.v1.Pod"];
+
+// `spec.containers` comes out keyed by `name`, and
+// `spec.containers.ports` by the (containerPort, protocol) pair.
+let config = k8s_schema::match_config_from_schema(pod, Some(schemas));
+```
+
+Pass `Some(components)` (the `components/schemas` map) so `$ref`s resolve; pass
+`None` for a fully-inlined schema such as a CRD's `openAPIV3Schema`.
+
+An `atomic` list derives to index matching, which is order-sensitive. Some lists
+are `atomic` only because they lack a merge key, not because order matters (e.g.
+`spec.tolerations`). Override such a path on the returned config:
+
+```rust
+use cool_diff::{ArrayMatchConfig, ArrayMatchMode};
+
+let config = config.with_config_at(
+    "spec.tolerations",
+    ArrayMatchConfig::new(ArrayMatchMode::Contains),
+);
+```
+
+See [`examples/openapi_pod.rs`](examples/openapi_pod.rs) for the full flow.
+
+> [!NOTE]
+> This feature is experimental and its API may change.
+
 ## Renderer
 
 The built-in `YamlRenderer` produces diff output using unified diff conventions:
@@ -157,6 +199,7 @@ Runnable examples are in the `examples/` directory:
 - [**match_configs**](examples/match_configs.rs) - mix of index, key, and contains matching
 - [**contains_check**](examples/contains_check.rs) - checking that elements exist regardless of order
 - [**kubernetes**](examples/kubernetes.rs) - diffing a Kubernetes Pod with key-based array matching
+- [**openapi_pod**](examples/openapi_pod.rs) - deriving a `MatchConfig` from a Kubernetes OpenAPI schema (needs `--features experimental`)
 - [**custom_renderer**](examples/custom_renderer.rs) - implementing a custom `DiffRenderer`
 
 Run any example with:
