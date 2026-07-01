@@ -70,6 +70,15 @@ fn collect(
         return;
     }
 
+    // The Kubernetes spec wraps `$ref`s in an `allOf` alongside metadata
+    // (`default`, `description`). Descend into each subschema at the same path.
+    if let Some(subschemas) = schema.get("allOf").and_then(Value::as_array) {
+        for subschema in subschemas {
+            collect(subschema, path, components, entries, visited);
+        }
+        return;
+    }
+
     if is_array(schema) {
         if let Some(mode) = array_match_mode(schema) {
             entries.push((path.to_owned(), mode));
