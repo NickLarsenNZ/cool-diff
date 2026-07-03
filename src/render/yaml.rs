@@ -26,6 +26,7 @@ pub enum ColorMode {
 /// - ` ` prefix for context lines (unchanged values, comments, structural markers)
 /// - `-` prefix for expected (what we wanted but didn't get)
 /// - `+` prefix for actual (what we got instead)
+#[derive(Debug)]
 pub struct YamlRenderer {
     /// Maximum lines to render per side for large values.
     ///

@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 /// The top-level result of a diff operation.
+#[derive(Debug)]
 pub struct DiffTree {
     /// The root-level diff nodes.
     pub roots: Vec<DiffNode>,
@@ -17,6 +18,7 @@ impl DiffTree {
 ///
 /// Used to select the correct unit word for omitted count markers
 /// (e.g. "fields" vs "items").
+#[derive(Debug)]
 pub enum ChildKind {
     /// Children are object fields (key-value pairs).
     Fields,
@@ -48,6 +50,7 @@ impl DiffNode {
 }
 
 /// A node in the diff tree.
+#[derive(Debug)]
 pub enum DiffNode {
     /// An intermediate node containing child diffs.
     Container {
@@ -101,6 +104,7 @@ impl DiffKind {
 }
 
 /// The kind of difference found at a leaf node.
+#[derive(Debug)]
 pub enum DiffKind {
     /// Values differ but have the same type.
     Changed {
@@ -144,6 +148,7 @@ impl PathSegment {
 }
 
 /// A segment in the path to a diff location.
+#[derive(Debug)]
 pub enum PathSegment {
     /// An object key (e.g. `spec` in `spec.containers`).
     Key(String),
