@@ -34,25 +34,47 @@ jobs:
       - run: cargo +1.85 check --all-targets --all-features
 
   clippy:
-    name: Clippy
+    name: Clippy (${{ matrix.name }})
     runs-on: ubuntu-latest
     permissions:
       contents: read # checkout
+    strategy:
+      matrix:
+        # Lint the library under each cfg variant, plus all features at once.
+        # `--all-features` auto-covers new features without editing this list.
+        include:
+          - { name: default, flags: "" }
+          - { name: experimental, flags: "--features experimental" }
+          - { name: kubernetes, flags: "--features kubernetes" }
+          - { name: color, flags: "--features color" }
+          - { name: all-features, flags: "--all-features" }
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - run: rustup show
       - run: rustup component add clippy
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy -p cool-diff --all-targets ${{ matrix.flags }} -- -D warnings
 
   test:
-    name: Test
+    name: Test (${{ matrix.name }})
     runs-on: ubuntu-latest
     permissions:
       contents: read # checkout
+    strategy:
+      matrix:
+        # Run the library's tests under each cfg variant, plus all features at
+        # once. The experimental and kubernetes test files gate themselves on
+        # their feature, so each is only exercised in a run that enables it.
+        # `--all-features` auto-covers new features without editing this list.
+        include:
+          - { name: default, flags: "" }
+          - { name: experimental, flags: "--features experimental" }
+          - { name: kubernetes, flags: "--features kubernetes" }
+          - { name: color, flags: "--features color" }
+          - { name: all-features, flags: "--all-features" }
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - run: rustup show
-      - run: cargo test
+      - run: cargo test -p cool-diff ${{ matrix.flags }}
 
   doc:
     name: Documentation
@@ -62,7 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - run: rustup show
-      - run: cargo doc --no-deps
+      - run: cargo doc -p cool-diff --no-deps --all-features
         env:
           RUSTDOCFLAGS: "-D warnings"
 
