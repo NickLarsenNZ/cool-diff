@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 /// Top-level configuration for the diff algorithm.
+#[derive(Debug)]
 pub struct DiffConfig {
     /// Controls how arrays are matched at each path.
     match_config: MatchConfig,
@@ -66,6 +67,7 @@ impl Default for DiffConfig {
 ///
 /// By default, arrays are matched by index. Each path can be configured with
 /// a different matching mode and ambiguity strategy via [`ArrayMatchConfig`].
+#[derive(Debug)]
 pub struct MatchConfig {
     /// Map from dot-separated path (e.g. `spec.containers`) to the array
     /// match configuration for that path.
@@ -99,6 +101,7 @@ impl Default for MatchConfig {
 }
 
 /// Per-path configuration for array element matching.
+#[derive(Debug)]
 pub struct ArrayMatchConfig {
     /// How elements are matched at this path.
     mode: ArrayMatchMode,
@@ -137,6 +140,7 @@ impl ArrayMatchConfig {
 
 /// How array elements are matched between actual and expected values at a
 /// given path.
+#[derive(Debug)]
 pub enum ArrayMatchMode {
     /// Match by position (default). Element 0 compares to element 0, etc.
     Index,
@@ -166,7 +170,7 @@ impl ArrayMatchMode {
 
 /// Controls behavior when multiple actual array elements could match a single
 /// expected element.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub enum AmbiguousMatchStrategy {
     /// Fail if more than one candidate exists.
     #[default]
