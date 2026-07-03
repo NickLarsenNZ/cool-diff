@@ -92,6 +92,13 @@ impl MatchConfig {
     pub fn config_at(&self, path: &str) -> Option<&ArrayMatchConfig> {
         self.paths.get(path)
     }
+
+    /// Returns the configured paths and their configs, in unspecified order.
+    pub fn paths(&self) -> impl Iterator<Item = (&str, &ArrayMatchConfig)> {
+        self.paths
+            .iter()
+            .map(|(path, config)| (path.as_str(), config))
+    }
 }
 
 impl Default for MatchConfig {
@@ -181,4 +188,25 @@ pub enum AmbiguousMatchStrategy {
 
     /// Pick the candidate with the fewest diffs, without a warning comment.
     Silent,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paths_yields_configured_paths() {
+        let config = MatchConfig::new()
+            .with_config_at("a", ArrayMatchConfig::new(ArrayMatchMode::key("name")))
+            .with_config_at("b", ArrayMatchConfig::new(ArrayMatchMode::Contains));
+
+        let mut entries: Vec<&str> = config.paths().map(|(path, _)| path).collect();
+        entries.sort_unstable();
+        assert_eq!(entries, ["a", "b"]);
+    }
+
+    #[test]
+    fn paths_is_empty_for_default() {
+        assert_eq!(MatchConfig::new().paths().count(), 0);
+    }
 }

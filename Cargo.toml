@@ -17,6 +17,7 @@ rstest = "0.26"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 ureq = "2"
+cool-diff = { path = ".", features = ["experimental"] }
 
 [package]
 name = "cool-diff"
@@ -34,6 +35,8 @@ exclude = [".github/", "deny.toml", "RELEASE.md", "rust-toolchain.toml"]
 [features]
 color = ["dep:owo-colors", "dep:supports-color"]
 experimental = []
+# Pre-generated MatchConfigs for well-known Kubernetes types (see `cargo xtask generate`).
+kubernetes = []
 
 [dependencies]
 owo-colors = { workspace = true, optional = true }
