@@ -34,7 +34,7 @@ Designed for comparing Kubernetes resources, API responses, config files, or any
   - [x] ANSI colour output for terminal rendering (behind `color` feature gate)
 - [x] Derive a `MatchConfig` from a Kubernetes OpenAPI schema (behind `experimental` feature gate)
 - [ ] JSON renderer
-- [ ] Pre-configured `MatchConfig` for common Kubernetes resource types
+- [x] Pre-configured `MatchConfig` for common Kubernetes resource types (behind `kubernetes` feature gate)
 - [ ] Inline comparison directives in the expected value
 
 ### Example output
@@ -55,11 +55,22 @@ Designed for comparing Kubernetes resources, API responses, config files, or any
 
 ## Installation
 
-Add to your `Cargo.toml`:
+```sh
+cargo add cool-diff
+```
 
-```toml
-[dependencies]
-cool-diff = "0.1"
+No features are enabled by default. The optional features are:
+
+| Feature        | Description                                                              |
+| -------------- | ------------------------------------------------------------------------ |
+| `color`        | ANSI colour output in the YAML renderer (auto-detects when piped).       |
+| `kubernetes`   | Pre-generated `MatchConfig`s for well-known Kubernetes types.            |
+| `experimental` | Derive a `MatchConfig` from a Kubernetes OpenAPI schema. API may change. |
+
+Enable them when adding the crate, for example:
+
+```sh
+cargo add cool-diff --features kubernetes,color
 ```
 
 ## Quick start
@@ -126,6 +137,30 @@ let config = DiffConfig::new().with_match_config(
             ArrayMatchConfig::new(ArrayMatchMode::Contains),
         ),
 );
+```
+
+## Kubernetes presets
+
+Behind the `kubernetes` feature gate, `cool_diff::kubernetes` ships pre-built
+`MatchConfig`s for well-known Kubernetes types, so you don't have to configure
+the array paths yourself. They are organised by API group and version:
+
+```rust
+use cool_diff::{DiffConfig, diff, kubernetes};
+
+let config = DiffConfig::new().with_match_config(kubernetes::core::v1::pod());
+let tree = diff(&actual, &expected, &config)?;
+```
+
+The presets are generated from the upstream Kubernetes OpenAPI spec, so their
+array matching (e.g. `spec.containers` keyed by `name`, `spec.containers.ports`
+by the `containerPort` + `protocol` pair) matches Kubernetes' own semantics.
+
+To regenerate them against a different Kubernetes version, run the generator
+with a tag or commit (a maintainer task; needs network access):
+
+```sh
+cargo xtask generate --ref v1.31.0
 ```
 
 ## Deriving a config from a Kubernetes OpenAPI schema (experimental)
