@@ -16,7 +16,7 @@ indoc = "2"
 rstest = "0.26"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-ureq = "2"
+ureq = "3"
 cool-diff = { path = ".", features = ["experimental"] }
 
 [package]
