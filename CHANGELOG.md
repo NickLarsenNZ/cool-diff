@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/NickLarsenNZ/cool-diff/compare/cool-diff-v0.2.0...cool-diff-v0.2.1) - 2026-11-08
+
+### Added
+
+- Kubernetes "core" MatchConfigs generated from OpenApi specs ([#22](https://github.com/NickLarsenNZ/cool-diff/pull/22))
+- Derive Debug on types ([#21](https://github.com/NickLarsenNZ/cool-diff/pull/21))
+- *(experimental)* Generate MatchConfigs for Kubernetes OpenApi specs ([#20](https://github.com/NickLarsenNZ/cool-diff/pull/20))
+
+### Other
+
+- *(deps)* bump snafu from 0.9.1 to 0.9.2 ([#29](https://github.com/NickLarsenNZ/cool-diff/pull/29))
+- *(deps)* bump owo-colors from 4.3.0 to 4.4.0 ([#31](https://github.com/NickLarsenNZ/cool-diff/pull/31))
+- *(deps)* bump serde from 1.0.228 to 1.0.229 ([#32](https://github.com/NickLarsenNZ/cool-diff/pull/32))
+- *(deps)* bump serde_json from 1.0.150 to 1.0.151 ([#27](https://github.com/NickLarsenNZ/cool-diff/pull/27))
+- release v0.2.0
+
 ## [0.2.0](https://github.com/NickLarsenNZ/cool-diff/compare/v0.1.1...v0.2.0) - 2026-06-27
 
 ### Added
